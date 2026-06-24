@@ -39,6 +39,11 @@ def parse_arguments():
     # Merge: takes SRC and DEST paths; runs INSERT OR IGNORE per table
     parser.add_argument('--merge-db', nargs=2, metavar=('SRC', 'DEST'),
         help='Merge SRC cadbusi.db into DEST cadbusi.db via INSERT OR IGNORE')
+    parser.add_argument('--anon-data', type=str, default=None,
+        help='Path to anon_data.csv; when set with --merge-db, refreshes clinical '
+             'fields on StudyCases rows that already exist in DEST. Rows in the '
+             'CSV with no matching accession in DEST are skipped (no placeholder '
+             'rows inserted).')
 
     return parser.parse_args()
 
@@ -75,7 +80,7 @@ def main():
     elif args.merge_db:
         from src.DB_processing.db_merge import merge_databases
         src_path, dest_path = args.merge_db
-        merge_databases(src_path, dest_path)
+        merge_databases(src_path, dest_path, anon_data_path=args.anon_data)
 
     elif args.deploy or args.cleanup or args.rerun:
         from src.dicom_downloader.dicom_download import dicom_download_remote_start

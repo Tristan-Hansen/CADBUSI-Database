@@ -135,9 +135,13 @@ The old DB is never modified. Use the same encryption key as the previous run �
 
 After verifying an incremental run, merge the new subset into the old DB:
 
-`python main.py --merge-db path/to/new_subset.db path/to/old_cadbusi.db`
+`python main.py --merge-db path/to/new_subset.db path/to/old_cadbusi.db [--anon-data path/to/anon_data.csv]`
 
-This copies every row from each table in `new_subset.db` into `old_cadbusi.db` via `INSERT OR IGNORE` (existing rows are kept). Only the `.db` is merged — you are responsible for copying the corresponding `images/` and `videos/` files from the new run's `DATABASE_DIR` into the destination's `images/` and `videos/` folders so the DB rows still point at files that exist on disk.
+This copies every row from each table in `new_subset.db` into `old_cadbusi.db` via `INSERT OR IGNORE` (existing rows are kept).
+
+If `--anon-data` is provided, after the table-by-table merge the destination's `StudyCases` rows get refreshed from the CSV: clinical fields (`left_diagnosis`, `right_diagnosis`, `bi_rads`, `findings`, etc.) on accession_numbers that already exist in the destination are updated to the CSV's values. Rows in the CSV whose accession_number is not already in the destination are skipped — no placeholder rows are inserted.
+
+Only the `.db` is merged — you are responsible for copying the corresponding `images/` and `videos/` files from the new run's `DATABASE_DIR` into the destination's `images/` and `videos/` folders so the DB rows still point at files that exist on disk.
 
 ## Labels Database
 
