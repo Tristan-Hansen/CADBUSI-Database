@@ -224,7 +224,253 @@ def get_pathology_data(patient_ids, batch_size=1000):
     
     return df
 
-  
+def get_surgery_data(patient_ids, batch_size=1000):
+    """
+    Get breast surgical case data for specific patient IDs, processing in batches.
+
+    Clinical document text is intentionally excluded here (see
+    get_surgery_documents) -- joining it into this wide result duplicates the
+    full note text onto every procedure/diagnosis row, which dominates both
+    query and download time.
+
+    Args:
+        patient_ids (list): List of patient IDs to query
+        batch_size (int): Number of patients to process in each batch
+
+    Returns:
+        pandas.DataFrame: Query results as a dataframe
+    """
+    start_time = time.time()
+    print("Initializing BigQuery client for surgery data...")
+    client = bigquery.Client()
+
+    all_results = []
+    total_patients = len(patient_ids)
+    total_batches = (total_patients + batch_size - 1) // batch_size
+
+    for i in tqdm(range(0, total_patients, batch_size), total=total_batches):
+        batch = patient_ids[i:i+batch_size]
+
+        # Format IDs appropriately
+        if batch and all(str(id).isdigit() for id in batch):
+            ids_str = ', '.join([str(id) for id in batch])
+        else:
+            ids_str = ', '.join([f"'{id}'" for id in batch])
+
+        query = f"""
+        SELECT DISTINCT
+          PAT_DIM_PATIENT.PATIENT_CLINIC_NUMBER AS PAT_PATIENT_CLINIC_NUMBER,
+          SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS.SURGICAL_CASE_ID AS SURGDIAG_SURGICAL_CASE_ID,
+          SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS.SURGICAL_DIAGNOSIS_DTM AS SURGDIAG_SURGICAL_DIAGNOSIS_DTM,
+          SURGPROC_DIM_SURGICAL_PROCEDURE.SURGICAL_PROCEDURE_DESCRIPTION AS SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION,
+          SURGPROC_DIM_SURGICAL_PROCEDURE.SURGICAL_PROCEDURE_CODE AS SURGPROC_SURGICAL_PROCEDURE_CODE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_ASA_SCORE AS SURGCASE_SURGICAL_ASA_SCORE,
+          DATE_DIFF(EXTRACT(DATE FROM SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_DTM), PAT_DIM_PATIENT.PATIENT_BIRTH_DATE, YEAR) -
+            IF(EXTRACT(MONTH FROM PAT_DIM_PATIENT.PATIENT_BIRTH_DATE)*100 + EXTRACT(DAY FROM PAT_DIM_PATIENT.PATIENT_BIRTH_DATE) >
+              EXTRACT(MONTH FROM SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_DTM)*100 + EXTRACT(DAY FROM SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_DTM),1,0) AS SURGCASE_PATIENT_AGE_AT_EVENT,
+          ANALOC_DIM_ANATOMIC_LOCATION.ANATOMIC_LOCATION_DESCRIPTION AS ANALOC_ANATOMIC_LOCATION_DESCRIPTION,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_ANESTHESIA_CODE AS SURGCASE_SURGICAL_ANESTHESIA_CODE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_ANESTHESIA_DESCRIPTION AS SURGCASE_SURGICAL_ANESTHESIA_DESCRIPTION,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_ADD_ON_INDICATOR AS SURGCASE_SURGICAL_CASE_ADD_ON_INDICATOR,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_CLASS AS SURGCASE_SURGICAL_CASE_CLASS,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_COUNT AS SURGCASE_SURGICAL_CASE_COUNT,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_ISOLATION_INDICATOR AS SURGCASE_SURGICAL_CASE_ISOLATION_INDICATOR,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CLOSURE_DTM AS SURGCASE_SURGICAL_CLOSURE_DTM,
+          DIAGCODE_DIM_DIAGNOSIS_CODE.DIAGNOSIS_CODE AS DIAGCODE_DIAGNOSIS_CODE,
+          SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS.SURGICAL_CASE_DIAGNOSIS_COUNT AS SURGDIAG_SURGICAL_CASE_DIAGNOSIS_COUNT,
+          DIAGCODE_DIM_DIAGNOSIS_CODE.DIAGNOSIS_DESCRIPTION AS DIAGCODE_DIAGNOSIS_DESCRIPTION,
+          DIAGCODE_DIM_DIAGNOSIS_CODE.DIAGNOSIS_METHOD_NAME AS DIAGCODE_DIAGNOSIS_METHOD_NAME,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_INCISION_BEGIN_DTM AS SURGCASE_SURGICAL_INCISION_BEGIN_DTM,
+          LOC_DIM_LOCATION.LOCATION_DESCRIPTION AS LOC_LOCATION_DESCRIPTION,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_OP_ROOM_ENTER_DTM AS SURGCASE_SURGICAL_OP_ROOM_ENTER_DTM,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_OP_ROOM_EXIT_DTM AS SURGCASE_SURGICAL_OP_ROOM_EXIT_DTM,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_OPERATION_END_DTM AS SURGCASE_SURGICAL_OPERATION_END_DTM,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_OPERATION_START_DTM AS SURGCASE_SURGICAL_OPERATION_START_DTM,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_PACU_LEVEL_CODE AS SURGCASE_SURGICAL_PACU_LEVEL_CODE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_POST_OP_DIAGNOSIS_NOTE AS SURGCASE_SURGICAL_POST_OP_DIAGNOSIS_NOTE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_POST_OP_PROCEDURE_NOTE AS SURGCASE_SURGICAL_POST_OP_PROCEDURE_NOTE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_POSTPROCEDURE_DTM AS SURGCASE_SURGICAL_POSTPROCEDURE_DTM,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_PRE_OP_DIAGNOSIS_NOTE AS SURGCASE_SURGICAL_PRE_OP_DIAGNOSIS_NOTE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_PRE_OP_PROCEDURE_NOTE AS SURGCASE_SURGICAL_PRE_OP_PROCEDURE_NOTE,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_PREPROCEDURE_DTM AS SURGCASE_SURGICAL_PREPROCEDURE_DTM,
+          CLINSERV1_DIM_CLINICAL_SERVICE.CLINICAL_SERVICE_CODE AS CLINSERV1_CLINICAL_SERVICE_CODE,
+          CLINSERV1_DIM_CLINICAL_SERVICE.CLINICAL_SERVICE_DESCRIPTION AS CLINSERV1_CLINICAL_SERVICE_DESCRIPTION,
+          CASEPRIORITY_DIM_SURGICAL_CASE_PRIORITY.SURGICAL_CASE_PRIORITY_CODE AS CASEPRIORITY_SURGICAL_CASE_PRIORITY_CODE,
+          CASEPRIORITY_DIM_SURGICAL_CASE_PRIORITY.SURGICAL_CASE_PRIORITY_DESCRIPTION AS CASEPRIORITY_SURGICAL_CASE_PRIORITY_DESCRIPTION,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_PROCEDURE_NHSN_CLOSURE_TECHNIQUE AS SURGPROC_SURGICAL_PROCEDURE_NHSN_CLOSURE_TECHNIQUE,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_PROCEDURE_ORDERED_DESCRIPTION AS SURGPROC_SURGICAL_PROCEDURE_ORDERED_DESCRIPTION,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.PRIMARY_PROCEDURE_INDICATOR AS SURGPROC_PRIMARY_PROCEDURE_INDICATOR,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_PROCEDURE_BILATERAL_CODE AS SURGPROC_SURGICAL_PROCEDURE_BILATERAL_CODE,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_CASE_ID AS SURGPROC_SURGICAL_CASE_ID,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_CASE_PROCEDURE_COUNT AS SURGPROC_SURGICAL_CASE_PROCEDURE_COUNT,
+          SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_PROCEDURE_SEQUENCE AS SURGPROC_SURGICAL_PROCEDURE_SEQUENCE,
+          SURGCASE_FACT_SURGICAL_CASE.SITE_CODE AS SURGCASE_LOCATION_SITE_NAME,
+          SURGCASE_FACT_SURGICAL_CASE.VISIT_NUMBER AS SURGCASE_VISIT_NUMBER,
+          SURGCASE_FACT_SURGICAL_CASE.SURGICAL_VISIT_TYPE AS SURGCASE_SURGICAL_VISIT_TYPE,
+          WOUNDTYPE_DIM_WOUND_TYPE.WOUND_TYPE_CODE AS WOUNDTYPE_WOUND_TYPE_CODE,
+          WOUNDTYPE_DIM_WOUND_TYPE.WOUND_TYPE_DESCRIPTION AS WOUNDTYPE_WOUND_TYPE_DESCRIPTION
+        FROM `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_SURGICAL_CASE` SURGCASE_FACT_SURGICAL_CASE
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_LOCATION` LOC_DIM_LOCATION
+          ON (SURGCASE_FACT_SURGICAL_CASE.LOCATION_DK = LOC_DIM_LOCATION.LOCATION_DK)
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_PATIENT` PAT_DIM_PATIENT
+          ON (SURGCASE_FACT_SURGICAL_CASE.PATIENT_DK = PAT_DIM_PATIENT.PATIENT_DK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_SURGICAL_CASE_PROCEDURE` SURGPROC_FACT_SURGICAL_CASE_PROCEDURE
+          ON (SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_FPK = SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_CASE_FPK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_SURGICAL_CASE_DIAGNOSIS` SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS
+          ON (SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_FPK = SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS.SURGICAL_CASE_FPK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_DIAGNOSIS_CODE` DIAGCODE_DIM_DIAGNOSIS_CODE
+          ON (SURGDIAG_FACT_SURGICAL_CASE_DIAGNOSIS.DIAGNOSIS_CODE_DK = DIAGCODE_DIM_DIAGNOSIS_CODE.DIAGNOSIS_CODE_DK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_SURGICAL_PROCEDURE` SURGPROC_DIM_SURGICAL_PROCEDURE
+          ON (SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.SURGICAL_PROCEDURE_DK = SURGPROC_DIM_SURGICAL_PROCEDURE.SURGICAL_PROCEDURE_DK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_ANATOMIC_LOCATION` ANALOC_DIM_ANATOMIC_LOCATION
+          ON (SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.ANATOMIC_LOCATION_DK = ANALOC_DIM_ANATOMIC_LOCATION.ANATOMIC_LOCATION_DK)
+        LEFT JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_WOUND_TYPE` WOUNDTYPE_DIM_WOUND_TYPE
+          ON (SURGPROC_FACT_SURGICAL_CASE_PROCEDURE.WOUND_TYPE_DK = WOUNDTYPE_DIM_WOUND_TYPE.WOUND_TYPE_DK)
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_SURGICAL_CASE_PRIORITY` CASEPRIORITY_DIM_SURGICAL_CASE_PRIORITY
+          ON (SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_PRIORITY_DK = CASEPRIORITY_DIM_SURGICAL_CASE_PRIORITY.SURGICAL_CASE_PRIORITY_DK)
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_CLINICAL_SERVICE` CLINSERV1_DIM_CLINICAL_SERVICE
+          ON (SURGCASE_FACT_SURGICAL_CASE.CLINICAL_SERVICE_DK = CLINSERV1_DIM_CLINICAL_SERVICE.CLINICAL_SERVICE_DK)
+        WHERE
+          PAT_DIM_PATIENT.PATIENT_CLINIC_NUMBER IN ({ids_str})
+          AND SURGPROC_DIM_SURGICAL_PROCEDURE.SURGICAL_PROCEDURE_DESCRIPTION LIKE '%BREAST%'
+        """
+
+        batch_df = client.query(query).to_dataframe()
+        all_results.append(batch_df)
+
+    if all_results:
+        df = pd.concat(all_results, ignore_index=True)
+    else:
+        df = pd.DataFrame()
+
+    total_duration = time.time() - start_time
+    print(f"Surgery query complete. Retrieved {len(df)} total rows in {total_duration:.2f} seconds.")
+
+    return df
+
+
+def get_surgery_documents(patient_ids, batch_size=1000):
+    """
+    Get clinical document text for patients' surgical cases, one row per
+    case/document pair, processing in batches.
+
+    FACT_CLINICAL_DOCUMENTS is ~5.5 TB and clustered by PATIENT_DK. Cluster
+    pruning only happens for literal filters on that column -- filtering via
+    joins scans the whole table. So each batch resolves clinic numbers to
+    PATIENT_DKs first, then filters the documents table directly.
+
+    Args:
+        patient_ids (list): List of patient IDs to query
+        batch_size (int): Number of patients to process in each batch
+
+    Returns:
+        pandas.DataFrame: Query results as a dataframe
+    """
+    start_time = time.time()
+    print("Initializing BigQuery client for surgery documents...")
+    client = bigquery.Client()
+
+    all_results = []
+    total_patients = len(patient_ids)
+    total_batches = (total_patients + batch_size - 1) // batch_size
+
+    for i in tqdm(range(0, total_patients, batch_size), total=total_batches):
+        batch = patient_ids[i:i+batch_size]
+
+        # Format IDs appropriately
+        if batch and all(str(id).isdigit() for id in batch):
+            ids_str = ', '.join([str(id) for id in batch])
+        else:
+            ids_str = ', '.join([f"'{id}'" for id in batch])
+
+        # Step 1: resolve clinic numbers -> PATIENT_DKs (cheap dimension lookup)
+        dk_query = f"""
+        SELECT DISTINCT PATIENT_DK
+        FROM `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_PATIENT`
+        WHERE PATIENT_CLINIC_NUMBER IN ({ids_str})
+        """
+        patient_dks = client.query(dk_query).to_dataframe()["PATIENT_DK"].tolist()
+        if not patient_dks:
+            continue
+        dks_str = ", ".join([f"'{dk}'" for dk in patient_dks])
+
+        # Step 2: literal PATIENT_DK filter on the clustered column prunes
+        # the scan to these patients' blocks
+        query = f"""
+        SELECT DISTINCT
+          NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.SURGICAL_CASE_ID AS NOTEBRIDGE_SURGICAL_CASE_ID,
+          NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.CLINICAL_DOCUMENT_ID AS NOTEBRIDGE_CLINICAL_DOCUMENT_ID,
+          CLINDOC_FACT_CLINICAL_DOCUMENTS.CLINICAL_DOCUMENT_TEXT AS CLINDOC_CLINICAL_DOCUMENT_TEXT
+        FROM `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_CLINICAL_DOCUMENTS` CLINDOC_FACT_CLINICAL_DOCUMENTS
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_SURGICAL_CASE_NOTE_BRIDGE` NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE
+          ON (CLINDOC_FACT_CLINICAL_DOCUMENTS.CLINICAL_DOCUMENT_ID = NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.CLINICAL_DOCUMENT_ID)
+        INNER JOIN
+          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_SURGICAL_CASE` SURGCASE_FACT_SURGICAL_CASE
+          ON (NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.SURGICAL_CASE_FPK = SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_FPK)
+        WHERE
+          CLINDOC_FACT_CLINICAL_DOCUMENTS.PATIENT_DK IN ({dks_str})
+          AND SURGCASE_FACT_SURGICAL_CASE.PATIENT_DK IN ({dks_str})
+        """
+
+        batch_df = client.query(query).to_dataframe()
+        all_results.append(batch_df)
+
+    if all_results:
+        df = pd.concat(all_results, ignore_index=True)
+    else:
+        df = pd.DataFrame()
+
+    total_duration = time.time() - start_time
+    print(f"Surgery documents query complete. Retrieved {len(df)} total rows in {total_duration:.2f} seconds.")
+
+    return df
+
+
+def run_surgery_query(patient_ids):
+    """
+    Run the batched surgery + documents queries, merge document text onto the
+    case rows via the note bridge's SURGICAL_CASE_ID, and save raw_surgery.csv
+
+    Args:
+        patient_ids (list): List of patient IDs to query
+
+    Returns:
+        pandas.DataFrame: Surgery data with document text attached
+    """
+    surgery_df = get_surgery_data(patient_ids)
+    surgery_df = surgery_df.drop_duplicates()
+
+    documents_df = get_surgery_documents(patient_ids)
+    documents_df = documents_df.drop_duplicates()
+
+    # Attach document text: one wide row per case-row/document pair; cases
+    # with no matching document keep a single row with empty text columns
+    if not surgery_df.empty and not documents_df.empty:
+        surgery_df = surgery_df.merge(
+            documents_df,
+            left_on="SURGPROC_SURGICAL_CASE_ID",
+            right_on="NOTEBRIDGE_SURGICAL_CASE_ID",
+            how="left",
+        )
+    elif not surgery_df.empty:
+        surgery_df["NOTEBRIDGE_SURGICAL_CASE_ID"] = pd.NA
+        surgery_df["NOTEBRIDGE_CLINICAL_DOCUMENT_ID"] = pd.NA
+        surgery_df["CLINDOC_CLINICAL_DOCUMENT_TEXT"] = pd.NA
+
+    return surgery_df
+
+
 def run_breast_imaging_query(limit=None):
     """
     Run queries with complete radiology, pathology, and lab data per patient
@@ -279,8 +525,23 @@ def run_breast_imaging_query(limit=None):
 
     append_audit("query.rad_patients_with_path", patients_with_path)
 
+    # Step 3: Get breast surgery data for these patients
+    print("\n=== SURGERY DATA QUERY ===")
+    surgery_df = run_surgery_query(patient_ids)
+
+    # Audit surgery results
+    surgery_path = os.path.join(env, "data", "raw_surgery.csv")
+    surgery_df.to_csv(surgery_path, index=False)
+    append_audit("query.raw_surgery_record_count", len(surgery_df))
+
+    if not surgery_df.empty:
+        patients_with_surgery = surgery_df['PAT_PATIENT_CLINIC_NUMBER'].nunique()
+        surgery_coverage_percentage = (patients_with_surgery / len(patient_ids)) * 100 if patient_ids else 0
+        print(f"{patients_with_surgery} of {len(patient_ids)} radiology patients ({surgery_coverage_percentage:.1f}%) have breast surgery data")
+        append_audit("query.rad_patients_with_surgery", patients_with_surgery)
+
     total_end_time = time.time()
     total_duration = total_end_time - total_start_time
     print(f"\nAll queries complete! Total execution time: {total_duration:.2f} seconds")
-    
-    return rad_df, path_df
+
+    return rad_df, path_df, surgery_df

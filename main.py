@@ -68,14 +68,14 @@ def main():
         limit = args.limit
         
         # Run the query with the specified limit
-        rad_df, path_df = run_breast_imaging_query(limit=limit)
+        rad_df, path_df, surgery_df = run_breast_imaging_query(limit=limit)
 
         # Parse that data
-        rad_df = filter_rad_data(rad_df, OUTPUT_PATH)
+        rad_df = filter_rad_data(rad_df, OUTPUT_PATH, surgery_df=surgery_df)
         path_df = filter_path_data(path_df, OUTPUT_PATH)
-        
+
         # Filter data
-        create_final_dataset(rad_df, path_df, OUTPUT_PATH)
+        create_final_dataset(rad_df, path_df, OUTPUT_PATH, surgery_df=surgery_df)
     
     elif args.merge_db:
         from src.DB_processing.db_merge import merge_databases

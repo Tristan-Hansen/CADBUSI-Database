@@ -576,19 +576,53 @@ def audit_pathology_dates(df):
     append_audit("query_clean.pathology_date_from_biopsy", days_differences)
     append_audit("query_clean.exam_date_from_biospy", exam_to_biopsy_differences)
     
-def create_final_dataset(rad_df, path_df, output_path):
+def add_surgery_records(final_df, surgery_df):
+    """
+    Append surgery records to the combined dataset as separate rows (same
+    pattern as pathology rows): PATIENT_ID and DATE reuse the existing
+    columns (DATE = SURGCASE_SURGICAL_OPERATION_END_DTM), plus the surgical
+    case ID and procedure description as new columns.
+    """
+    if surgery_df is None or surgery_df.empty:
+        print("No surgery data to add")
+        return final_df
+
+    surgery_records = surgery_df[[
+        'PAT_PATIENT_CLINIC_NUMBER',
+        'SURGCASE_SURGICAL_OPERATION_END_DTM',
+        'NOTEBRIDGE_SURGICAL_CASE_ID',
+        'SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION',
+        'SURGPROC_SURGICAL_PROCEDURE_BILATERAL_CODE',
+    ]].copy()
+
+    surgery_records = surgery_records.rename(columns={'PAT_PATIENT_CLINIC_NUMBER': 'PATIENT_ID'})
+    surgery_records['PATIENT_ID'] = surgery_records['PATIENT_ID'].astype(str)
+    surgery_records['DATE'] = pd.to_datetime(
+        surgery_records['SURGCASE_SURGICAL_OPERATION_END_DTM'], errors='coerce'
+    )
+    surgery_records.drop(columns=['SURGCASE_SURGICAL_OPERATION_END_DTM'], inplace=True)
+    surgery_records = surgery_records.drop_duplicates()
+
+    combined = pd.concat([final_df, surgery_records], ignore_index=True)
+    print(f"Added {len(surgery_records)} surgery rows to the combined dataset")
+    append_audit("query_clean.surgery_rows_added", len(surgery_records))
+
+    return combined
+
+
+def create_final_dataset(rad_df, path_df, output_path, surgery_df=None):
     """Main function to create the final dataset with pathology records on separate rows."""
     print("\nLinking data:")
-    
+
     # Prepare dataframes
     rad_df, path_df = prepare_dataframes(rad_df, path_df)
     path_df_length = len(path_df)
-    
+
     # Combine dataframes
     final_df = combine_dataframes(rad_df, path_df)
-    
+
     final_df = fill_pathology_accession_numbers(final_df)
-    
+
     # Determine final interpretation
     final_df = determine_final_interpretation(final_df)
 
@@ -597,10 +631,14 @@ def create_final_dataset(rad_df, path_df, output_path):
 
     # CREATE THE LESION PATHOLOGY SUBSET CSV
     pathology_subset = create_pathology_subset_csv(final_df)
-    
-    
+
+    # Surgery rows go into the debug CSV only -- downstream filtering
+    # (endpoint_data.csv) continues from final_df without them, and they
+    # would be dropped by the US/diagnosis filter anyway.
+    debug_df = add_surgery_records(final_df, surgery_df)
+
     # Save to CSV
-    final_df.to_csv(f'{output_path}/combined_dataset_debug.csv', index=False)
+    debug_df.to_csv(f'{output_path}/combined_dataset_debug.csv', index=False)
 
     audit_pathology_dates(final_df)
 
@@ -681,12 +719,20 @@ if __name__ == "__main__":
         
         rad_df = pd.read_csv(rad_file_path)
         print(f"Loaded radiology data with {len(rad_df)} records")
-        
+
         path_df = pd.read_csv(path_file_path)
         print(f"Loaded pathology data with {len(path_df)} records")
-        
+
+        surgery_file_path = f'{output_path}/raw_surgery.csv'
+        if os.path.exists(surgery_file_path):
+            surgery_df = pd.read_csv(surgery_file_path)
+            print(f"Loaded surgery data with {len(surgery_df)} records")
+        else:
+            surgery_df = None
+            print("No raw_surgery.csv found -- skipping surgery rows")
+
         # Call the create_final_dataset function
-        create_final_dataset(rad_df, path_df, output_path)
+        create_final_dataset(rad_df, path_df, output_path, surgery_df=surgery_df)
         
     except FileNotFoundError as e:
         print(f"Error: {e}")

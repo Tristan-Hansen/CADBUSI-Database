@@ -822,6 +822,103 @@ def add_prior_biopsy_columns(radiology_df):
 
     return radiology_df
 
+# Procedure-description regexes for breast-implant status. Removal is checked
+# FIRST because "REMOVAL IMPLANT BREAST" / "REMOVAL TISSUE EXPANDER BREAST"
+# also contain the present-implant keywords.
+IMPLANT_REMOVED_PATTERN = re.compile(r'REMOVAL.*(?:IMPLANT|TISSUE EXPANDER)')
+IMPLANT_PRESENT_PATTERN = re.compile(r'IMPLANT|AUGMENTATION|TISSUE EXPANDER')
+
+
+def classify_implant_procedure(description):
+    """
+    Classify a surgical procedure description for breast-implant status:
+      - 'removed'  implant/tissue-expander taken out
+      - 'present'  implant/tissue-expander placed or retained (augmentation,
+                   exchange, reconstruction-with-implant, repositioning, ...)
+      - None       neutral -- capsule procedures (capsulectomy/capsulotomy/
+                   capsulorrhaphy) and generic 'REVISION BREAST' imply an
+                   implant history but don't reliably indicate current status,
+                   and all non-implant procedures (lumpectomy, biopsy,
+                   mastopexy, flap reconstruction, etc.)
+    """
+    if pd.isna(description):
+        return None
+    d = str(description).upper()
+    if IMPLANT_REMOVED_PATTERN.search(d):
+        return 'removed'
+    if IMPLANT_PRESENT_PATTERN.search(d):
+        return 'present'
+    return None
+
+
+def add_breast_implant_status(radiology_df, surgery_df):
+    """
+    Add a 'has_breast_implant' column to each radiology exam:
+      - 'unknown'  default (no implant surgery on/before the exam date)
+      - 'true'     patient's most recent breast-implant surgery on or before
+                   the exam date placed/retained an implant
+      - 'removed'  that most recent surgery removed the implant
+
+    Matches on PATIENT_ID + exam date (RADIOLOGY_DTM) against the surgery
+    events' clinic number + date (SURGCASE_SURGICAL_OPERATION_END_DTM).
+    """
+    print("Processing breast implant status...")
+
+    radiology_df['has_breast_implant'] = 'unknown'
+
+    if surgery_df is None or surgery_df.empty:
+        print("  No surgery data -- has_breast_implant left as 'unknown'")
+        return radiology_df
+
+    # Build a per-patient timeline of classified implant events
+    events = surgery_df[[
+        'PAT_PATIENT_CLINIC_NUMBER',
+        'SURGCASE_SURGICAL_OPERATION_END_DTM',
+        'SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION',
+    ]].copy()
+    events['status'] = events['SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION'].apply(classify_implant_procedure)
+    events = events[events['status'].notna()].copy()
+    events['_pid_str'] = events['PAT_PATIENT_CLINIC_NUMBER'].astype(str)
+    events['event_date'] = pd.to_datetime(events['SURGCASE_SURGICAL_OPERATION_END_DTM'], errors='coerce')
+    events = events.dropna(subset=['event_date'])
+
+    if events.empty:
+        print("  No breast-implant surgery events detected")
+        return radiology_df
+
+    events_by_patient = {pid: g.sort_values('event_date') for pid, g in events.groupby('_pid_str')}
+
+    # Temp columns for matching; leave PATIENT_ID/RADIOLOGY_DTM dtypes untouched
+    radiology_df['_pid_str'] = radiology_df['PATIENT_ID'].astype(str)
+    radiology_df['_exam_date'] = pd.to_datetime(radiology_df['RADIOLOGY_DTM'], errors='coerce')
+
+    implant_true = 0
+    implant_removed = 0
+    for pid, patient_events in events_by_patient.items():
+        for idx in radiology_df.index[radiology_df['_pid_str'] == pid]:
+            exam_date = radiology_df.at[idx, '_exam_date']
+            if pd.isna(exam_date):
+                continue
+            prior = patient_events[patient_events['event_date'] <= exam_date]
+            if prior.empty:
+                continue
+            latest_status = prior.iloc[-1]['status']
+            if latest_status == 'present':
+                radiology_df.at[idx, 'has_breast_implant'] = 'true'
+                implant_true += 1
+            elif latest_status == 'removed':
+                radiology_df.at[idx, 'has_breast_implant'] = 'removed'
+                implant_removed += 1
+
+    radiology_df.drop(columns=['_pid_str', '_exam_date'], inplace=True)
+
+    print(f"  has_breast_implant: {implant_true} exams marked 'true', {implant_removed} marked 'removed'")
+    append_audit("query_clean_rad.exams_with_implant_true", implant_true)
+    append_audit("query_clean_rad.exams_with_implant_removed", implant_removed)
+
+    return radiology_df
+
+
 def remove_bad_data(radiology_df, output_path):
     # Count and remove rows with BI-RADS = '0'
     birads_zero_mask = radiology_df['BI-RADS'].isin(['0'])
@@ -858,7 +955,7 @@ def extract_concordance(text):
     return 'T' if m.group(1).upper() == 'YES' else 'F'
 
 
-def filter_rad_data(radiology_df, output_path):
+def filter_rad_data(radiology_df, output_path, surgery_df=None):
     print("Parsing Radiology Data:")
     
     # Print length
@@ -937,6 +1034,9 @@ def filter_rad_data(radiology_df, output_path):
     # Add prior biopsy and cancer columns
     radiology_df = add_prior_biopsy_columns(radiology_df)
 
+    # Add breast implant status from surgery history (per exam, temporal)
+    radiology_df = add_breast_implant_status(radiology_df, surgery_df)
+
     # Remove bad data
     radiology_df = remove_bad_data(radiology_df, output_path)
     
@@ -954,4 +1054,13 @@ def filter_rad_data(radiology_df, output_path):
 if __name__ == "__main__":
     rad_df = pd.read_csv(f'{env}/data/raw_radiology.csv')
     output_path = os.path.join(env, "data")
-    filter_rad_data(rad_df, output_path)
+
+    surgery_file_path = f'{env}/data/raw_surgery.csv'
+    if os.path.exists(surgery_file_path):
+        surgery_df = pd.read_csv(surgery_file_path)
+        print(f"Loaded surgery data with {len(surgery_df)} records")
+    else:
+        surgery_df = None
+        print("No raw_surgery.csv found -- has_breast_implant will be 'unknown'")
+
+    filter_rad_data(rad_df, output_path, surgery_df=surgery_df)
