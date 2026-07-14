@@ -590,7 +590,7 @@ def add_surgery_records(final_df, surgery_df):
     surgery_records = surgery_df[[
         'PAT_PATIENT_CLINIC_NUMBER',
         'SURGCASE_SURGICAL_OPERATION_END_DTM',
-        'NOTEBRIDGE_SURGICAL_CASE_ID',
+        'SURGPROC_SURGICAL_CASE_ID',
         'SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION',
         'SURGPROC_SURGICAL_PROCEDURE_BILATERAL_CODE',
     ]].copy()

@@ -228,10 +228,9 @@ def get_surgery_data(patient_ids, batch_size=1000):
     """
     Get breast surgical case data for specific patient IDs, processing in batches.
 
-    Clinical document text is intentionally excluded here (see
-    get_surgery_documents) -- joining it into this wide result duplicates the
-    full note text onto every procedure/diagnosis row, which dominates both
-    query and download time.
+    Clinical document / surgical note text is intentionally not queried -- the
+    FACT_CLINICAL_DOCUMENTS table is ~5.5 TB and made the run far too slow for
+    the little value the notes added.
 
     Args:
         patient_ids (list): List of patient IDs to query
@@ -359,114 +358,22 @@ def get_surgery_data(patient_ids, batch_size=1000):
     return df
 
 
-def get_surgery_documents(patient_ids, batch_size=1000):
-    """
-    Get clinical document text for patients' surgical cases, one row per
-    case/document pair, processing in batches.
-
-    FACT_CLINICAL_DOCUMENTS is ~5.5 TB and clustered by PATIENT_DK. Cluster
-    pruning only happens for literal filters on that column -- filtering via
-    joins scans the whole table. So each batch resolves clinic numbers to
-    PATIENT_DKs first, then filters the documents table directly.
-
-    Args:
-        patient_ids (list): List of patient IDs to query
-        batch_size (int): Number of patients to process in each batch
-
-    Returns:
-        pandas.DataFrame: Query results as a dataframe
-    """
-    start_time = time.time()
-    print("Initializing BigQuery client for surgery documents...")
-    client = bigquery.Client()
-
-    all_results = []
-    total_patients = len(patient_ids)
-    total_batches = (total_patients + batch_size - 1) // batch_size
-
-    for i in tqdm(range(0, total_patients, batch_size), total=total_batches):
-        batch = patient_ids[i:i+batch_size]
-
-        # Format IDs appropriately
-        if batch and all(str(id).isdigit() for id in batch):
-            ids_str = ', '.join([str(id) for id in batch])
-        else:
-            ids_str = ', '.join([f"'{id}'" for id in batch])
-
-        # Step 1: resolve clinic numbers -> PATIENT_DKs (cheap dimension lookup)
-        dk_query = f"""
-        SELECT DISTINCT PATIENT_DK
-        FROM `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_PATIENT`
-        WHERE PATIENT_CLINIC_NUMBER IN ({ids_str})
-        """
-        patient_dks = client.query(dk_query).to_dataframe()["PATIENT_DK"].tolist()
-        if not patient_dks:
-            continue
-        dks_str = ", ".join([f"'{dk}'" for dk in patient_dks])
-
-        # Step 2: literal PATIENT_DK filter on the clustered column prunes
-        # the scan to these patients' blocks
-        query = f"""
-        SELECT DISTINCT
-          NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.SURGICAL_CASE_ID AS NOTEBRIDGE_SURGICAL_CASE_ID,
-          NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.CLINICAL_DOCUMENT_ID AS NOTEBRIDGE_CLINICAL_DOCUMENT_ID,
-          CLINDOC_FACT_CLINICAL_DOCUMENTS.CLINICAL_DOCUMENT_TEXT AS CLINDOC_CLINICAL_DOCUMENT_TEXT
-        FROM `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_CLINICAL_DOCUMENTS` CLINDOC_FACT_CLINICAL_DOCUMENTS
-        INNER JOIN
-          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.DIM_SURGICAL_CASE_NOTE_BRIDGE` NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE
-          ON (CLINDOC_FACT_CLINICAL_DOCUMENTS.CLINICAL_DOCUMENT_ID = NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.CLINICAL_DOCUMENT_ID)
-        INNER JOIN
-          `ml-mps-adl-intudp-phi-p-d5cb.phi_udpwh_etl_us_p.FACT_SURGICAL_CASE` SURGCASE_FACT_SURGICAL_CASE
-          ON (NOTEBRIDGE_DIM_SURGICAL_CASE_NOTE_BRIDGE.SURGICAL_CASE_FPK = SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_FPK)
-        WHERE
-          CLINDOC_FACT_CLINICAL_DOCUMENTS.PATIENT_DK IN ({dks_str})
-          AND SURGCASE_FACT_SURGICAL_CASE.PATIENT_DK IN ({dks_str})
-        """
-
-        batch_df = client.query(query).to_dataframe()
-        all_results.append(batch_df)
-
-    if all_results:
-        df = pd.concat(all_results, ignore_index=True)
-    else:
-        df = pd.DataFrame()
-
-    total_duration = time.time() - start_time
-    print(f"Surgery documents query complete. Retrieved {len(df)} total rows in {total_duration:.2f} seconds.")
-
-    return df
-
-
 def run_surgery_query(patient_ids):
     """
-    Run the batched surgery + documents queries, merge document text onto the
-    case rows via the note bridge's SURGICAL_CASE_ID, and save raw_surgery.csv
+    Run the batched breast surgery query and return the deduplicated result.
+
+    (Clinical document / surgical note text was previously pulled here too, but
+    FACT_CLINICAL_DOCUMENTS is ~5.5 TB and made the run far too slow for the
+    little value the notes added, so that query was dropped.)
 
     Args:
         patient_ids (list): List of patient IDs to query
 
     Returns:
-        pandas.DataFrame: Surgery data with document text attached
+        pandas.DataFrame: Surgery data
     """
     surgery_df = get_surgery_data(patient_ids)
     surgery_df = surgery_df.drop_duplicates()
-
-    documents_df = get_surgery_documents(patient_ids)
-    documents_df = documents_df.drop_duplicates()
-
-    # Attach document text: one wide row per case-row/document pair; cases
-    # with no matching document keep a single row with empty text columns
-    if not surgery_df.empty and not documents_df.empty:
-        surgery_df = surgery_df.merge(
-            documents_df,
-            left_on="SURGPROC_SURGICAL_CASE_ID",
-            right_on="NOTEBRIDGE_SURGICAL_CASE_ID",
-            how="left",
-        )
-    elif not surgery_df.empty:
-        surgery_df["NOTEBRIDGE_SURGICAL_CASE_ID"] = pd.NA
-        surgery_df["NOTEBRIDGE_CLINICAL_DOCUMENT_ID"] = pd.NA
-        surgery_df["CLINDOC_CLINICAL_DOCUMENT_TEXT"] = pd.NA
 
     return surgery_df
 
