@@ -220,13 +220,13 @@ def apply_filters(CONFIG):
         audit_stats['unknown_lat_removed'] = len(lat_images)
 
         # Filter 4: Remove images with multiple regions
-        multi_region_mask = image_df['region_count'] > 1
-        region_images = image_df[multi_region_mask][['image_name', 'dicom_hash']].copy()
-        region_images['exclusion_reason'] = 'multiple regions'
-        excluded_images.append(region_images)
+        #multi_region_mask = image_df['region_count'] > 1
+        #region_images = image_df[multi_region_mask][['image_name', 'dicom_hash']].copy()
+        #region_images['exclusion_reason'] = 'multiple regions'
+        #excluded_images.append(region_images)
 
-        image_df = image_df[~multi_region_mask]
-        audit_stats['multi_region_removed'] = len(region_images)
+        #image_df = image_df[~multi_region_mask]
+        #audit_stats['multi_region_removed'] = len(region_images)
 
         # Update has_malignant for all cases (vectorized)
         both_null = breast_df['left_diagnosis'].isna() & breast_df['right_diagnosis'].isna()

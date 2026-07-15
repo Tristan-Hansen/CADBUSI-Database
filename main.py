@@ -134,6 +134,7 @@ def main():
         from src.ML_processing.caliper_coordinates import Locate_Calipers
         from src.DB_processing.validation_split import PerformSplit
         from src.DB_processing.split_bilateral import split_bilateral_cases_in_db
+        from src.DB_processing.split_regions import split_regions_in_db
         from src.ML_processing.ultrasound_cropping import generate_crop_regions
         from src.ML_processing.caliper_pipeline.caliper_pipeline_run import run_caliper_pipeline
         from src.ML_processing.download_models import download_models
@@ -168,6 +169,8 @@ def main():
         generate_crop_regions(CONFIG)
         run_caliper_pipeline()
 
+        print("Splitting dual-region crops...")
+        split_regions_in_db()
 
         # Step 4: Clean data
         print("Step 4/5: Cleaning image data...")
