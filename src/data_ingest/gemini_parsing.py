@@ -28,9 +28,12 @@ SYSTEM_PROMPT = """You are a medical data extraction assistant specializing in b
 
 Your task: Extract ALL lesions mentioned in radiology text and output them as a JSON array.
 
+Each report begins with a header line stating the study laterality, e.g.: Study Laterality: "LEFT" (possible values: "LEFT", "RIGHT", "BILATERAL").
+
 Each lesion should have these fields:
+- laterality: which breast the lesion is in: "LEFT" or "RIGHT", or "BILATERAL"
 - direction: clock position (e.g., "2:00", "12:00") or "na" if not specified
-- distance: distance from nipple (e.g., "4cm", "2cm") or "na" if not specified  
+- distance: distance from nipple (e.g., "4cm", "2cm") or "na" if not specified
 - size: maximum dimension (e.g., "5mm", "1.2cm") or "na" if not specified
 - type: lesion description (e.g., "oval circumscribed mass") or "na" if unclear. Include lesion type: "mass, lymph node, cyst, etc.". Other characteristics of interest include: "circumscribed, macrolobulated, microlobulated, indistinct, angular, spiculated, oval, round, irregular, parallel, not parallel, anechoic, hypoechoic, isoechoic, hyperechoic, complex, heterogeneous, no posterior features, enhancement, shadowing, combined pattern, abrupt interface, echogenic halo, architectural distortion"
 
@@ -41,41 +44,45 @@ CRITICAL RULES:
 4. Order lesions as they appear in the text.
 5. Normalize units: keep as written (don't convert mm to cm or vice versa).
 6. For size ranges like "up to 3mm", use the maximum value.
+7. Laterality: if the study laterality is "LEFT" or "RIGHT", assign that side to every lesion (the study laterality is authoritative, even if the surrounding text mentions the other breast). If the study laterality is "BILATERAL", use context clues (e.g. "left breast", "right breast at 12:00") to assign each lesion's side; use "na" only when the side truly cannot be determined.
 
 Output format:
-[{"direction": "...", "distance": "...", "size": "...", "type": "..."}, ...]
+[{"laterality": "...", "direction": "...", "distance": "...", "size": "...", "type": "..."}, ...]
 
 If no lesions are found, output: []
 """
 
 FEW_SHOT_EXAMPLES = [
     (
-        """Additional evaluation was performed for an asymmetry within the left 
+        """Study Laterality: "LEFT"
+        Additional evaluation was performed for an asymmetry within the left
         upper outer breast, which persists as a well-circumscribed ovoid 5 mm
-        mass on additional diagnostic imaging. Targeted ultrasound was performed 
-        within the left upper outer quadrant which demonstrates a well-circumscribed 
-        fibrocystic complex measuring 5 mm x 2 mm x 2 mm in the left breast 2:00 4 cm from the 
-        nipple. Incidental note made of a 3 mm anechoic cyst within the left 6-7 o'clock 
-        periareolar position. No suspicious masses or other abnormalities 
+        mass on additional diagnostic imaging. Targeted ultrasound was performed
+        within the left upper outer quadrant which demonstrates a well-circumscribed
+        fibrocystic complex measuring 5 mm x 2 mm x 2 mm in the left breast 2:00 4 cm from the
+        nipple. Incidental note made of a 3 mm anechoic cyst within the left 6-7 o'clock
+        periareolar position. No suspicious masses or other abnormalities
         are identified.""",
         [
-            {"direction": "2:00", "distance": "4cm", "size": "5mm", "type": "circumscribed ovoid mass"},
-            {"direction": "6:30", "distance": "0cm", "size": "3mm", "type": "circumscribed fibrocystic complex"}
+            {"laterality": "LEFT", "direction": "2:00", "distance": "4cm", "size": "5mm", "type": "circumscribed ovoid mass"},
+            {"laterality": "LEFT", "direction": "6:30", "distance": "0cm", "size": "3mm", "type": "circumscribed fibrocystic complex"}
         ]
     ),
     (
-        """Ultrasound of the left breast upper outer quadrant at 1:00, 2 cm from 
-        the nipple, 2:00, 3 cm from the nipple, and 3:00 6 cm from the nipple 
-        show multiple small benign cysts measuring up to 3 mm x 3 mm x 2 mm 
+        """Study Laterality: "LEFT"
+        Ultrasound of the left breast upper outer quadrant at 1:00, 2 cm from
+        the nipple, 2:00, 3 cm from the nipple, and 3:00 6 cm from the nipple
+        show multiple small benign cysts measuring up to 3 mm x 3 mm x 2 mm
         which account for the mammographic findings.""",
         [
-            {"direction": "1:00", "distance": "2cm", "size": "3mm", "type": "benign cyst"},
-            {"direction": "2:00", "distance": "3cm", "size": "3mm", "type": "benign cyst"},
-            {"direction": "3:00", "distance": "6cm", "size": "3mm", "type": "benign cyst"}
+            {"laterality": "LEFT", "direction": "1:00", "distance": "2cm", "size": "3mm", "type": "benign cyst"},
+            {"laterality": "LEFT", "direction": "2:00", "distance": "3cm", "size": "3mm", "type": "benign cyst"},
+            {"laterality": "LEFT", "direction": "3:00", "distance": "6cm", "size": "3mm", "type": "benign cyst"}
         ]
     ),
     (
-        """There is an oval hypoechoic mass measuring 3.8 x 1.4 x 3.6 cm with well defined, 
+        """Study Laterality: "LEFT"
+        There is an oval hypoechoic mass measuring 3.8 x 1.4 x 3.6 cm with well defined, 
         thin margins in the right breast upper outer quadrant at 10 o'clock.  The mass is parallel to the chest wall.  
         This is at the site of palpable concern marked on skin. Ultrasound-guided biopsy recommended.    
         Findings and recommendations were discussed with the patient and Dr. Hines.    Ultrasound guided core biopsy is recommended.       
@@ -84,7 +91,22 @@ FEW_SHOT_EXAMPLES = [
         (Refer to pathology report for detailed description.) This is a benign, concordant and specific diagnosis. Given size of lesion, 
         surgical consult recommended for excision.""",
         [
-            {"direction": "10:00", "distance": "na", "size": "3.8cm", "type": "parallel oval hypoechoic mass"}
+            {"laterality": "LEFT", "direction": "10:00", "distance": "na", "size": "3.8cm", "type": "parallel oval hypoechoic mass"}
+        ]
+    ),
+    (
+        """Study Laterality: "BILATERAL"
+        Bilateral diagnostic mammogram with spot compression views of the outer and inner left breast were performed.
+        There are waxing and waning similar-appearing oval and lobulated masses in the upper outer left breast and a
+        superficial oval mass in the lower inner left breast. Stable radiopaque marker in the upper inner left breast
+        at the site of prior benign biopsy. No suspicious findings are seen. Intact bilateral retropectoral saline implants.
+        Targeted ultrasound of the prior area of sonographic abnormality in the right breast at 12:00, 7 cm from nipple
+        demonstrates a stable circumscribed, hypoechoic mass measuring 0.7 x 0.5 x 0.6 cm (previously measured 0.6 x 0.5 x 0.6 cm).
+        Sonographic survey of the outer left breast demonstrates ductal ectasia and numerous similar-appearing oval,
+        circumscribed, hypoechoic masses, which are most compatible with simple and complicated cysts and correlate
+        with the mammographic findings.""",
+        [
+            {"laterality": "RIGHT", "direction": "12:00", "distance": "7cm", "size": "0.7cm", "type": "circumscribed oval hypoechoic mass"}
         ]
     ),
 ]
@@ -125,10 +147,10 @@ def build_vertex_contents(text: str) -> list[dict]:
 
 
 def format_as_label(lesions: list[dict]) -> str:
-    """Convert lesion dicts back to label format: [dir, dist, size, type]"""
+    """Convert lesion dicts back to label format: [laterality, dir, dist, size, type]"""
     labels = []
     for l in lesions:
-        label = f"[{l['direction']}, {l['distance']}, {l['size']}, {l['type']}]"
+        label = f"[{l.get('laterality', 'na')}, {l['direction']}, {l['distance']}, {l['size']}, {l['type']}]"
         labels.append(label)
     return ", ".join(labels)
 
@@ -327,10 +349,15 @@ def create_batch_jsonl(
                 continue
             
             anonymized_text = anonymize_dates_times_and_names(str(text))
-            
+
+            # Prepend the study laterality header (matches few-shot example format)
+            laterality = row.get('Study_Laterality')
+            laterality = str(laterality).upper().strip() if pd.notna(laterality) else "na"
+            input_text = f'Study Laterality: "{laterality}"\n{anonymized_text}'
+
             # Few-shot + actual query
             contents = few_shot_contents + [
-                {"role": "user", "parts": [{"text": anonymized_text}]}
+                {"role": "user", "parts": [{"text": input_text}]}
             ]
             
             batch_request = {
@@ -674,7 +701,7 @@ if __name__ == "__main__":
         csv_path='/data/endpoint_data.csv',
         gcs_bucket=CONFIG['BUCKET'],
         text_column='ultrasound_findings',
-        model='gemini-2.5-flash',
+        model='gemini-3.1-flash-lite',
         output_dir='batch_results_gemini',
         gcs_input_prefix='cadbusi/batch_input',
         gcs_output_prefix='cadbusi/batch_output',

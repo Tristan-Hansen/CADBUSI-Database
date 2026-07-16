@@ -19,11 +19,15 @@ def parse_lesion_descriptions(description_text: str) -> List[Dict]:
     """
     Parse lesion descriptions from the StudyCases.lesion_descriptions field.
 
-    Expected format: [clock_pos, distance, sizing, description], [clock_pos, distance, sizing, description], ...
-    Example: [1:00, 5cm, 2.9cm, irregular hypoechoic mass with obscured borders], [2:00, 7cm, 1.2cm, irregular hypoechoic mass]
+    Supports two formats:
+    - New (5 fields): [laterality, clock_pos, distance, sizing, description], ...
+      Example: [LEFT, 1:00, 5cm, 2.9cm, irregular hypoechoic mass with obscured borders]
+    - Legacy (4 fields): [clock_pos, distance, sizing, description], ...
+      Example: [1:00, 5cm, 2.9cm, irregular hypoechoic mass with obscured borders]
 
     Returns:
-        List of dicts with keys: clock, distance_cm, sizing_cm, description
+        List of dicts with keys: laterality, clock, distance_cm, sizing_cm, description
+        (laterality is None for legacy-format entries or "na" values)
     """
     if not description_text or pd.isna(description_text):
         return []
@@ -41,7 +45,13 @@ def parse_lesion_descriptions(description_text: str) -> List[Dict]:
         if len(parts) < 4:
             continue  # Invalid format
 
-        # Extract the 4 parts
+        # New format has a leading laterality field: LEFT / RIGHT / na
+        laterality = None
+        if len(parts) >= 5 and parts[0].strip().upper() in ('LEFT', 'RIGHT', 'NA'):
+            lat_value = parts[0].strip().upper()
+            laterality = lat_value if lat_value in ('LEFT', 'RIGHT') else None
+            parts = parts[1:]
+
         clock_pos = parts[0].strip()
         distance = parts[1].strip()
         sizing = parts[2].strip()
@@ -54,6 +64,7 @@ def parse_lesion_descriptions(description_text: str) -> List[Dict]:
         sizing_cm = parse_distance_to_cm(sizing)
 
         lesions.append({
+            'laterality': laterality,
             'clock': clock_pos,
             'distance_cm': distance_cm,
             'sizing_cm': sizing_cm,

@@ -447,8 +447,8 @@ def add_ultrasound_classifications(radiology_df, output_path):
     """Add classifications using custom parser with audit saved as separate JSON file"""
     parser = UltrasoundNegationParser()
 
-    # Filter for ultrasound modality and RIGHT or LEFT laterality
-    mask = (radiology_df['MODALITY'] == 'US') & (radiology_df['Study_Laterality'].isin(['RIGHT', 'LEFT']))
+    # Filter for ultrasound modality (all lateralities, including BILATERAL)
+    mask = radiology_df['MODALITY'] == 'US'
     filtered_df = radiology_df[mask].copy()
 
     print(f"Processing {len(filtered_df)} records with custom parser...")
