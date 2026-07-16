@@ -1,5 +1,4 @@
 import os
-import json
 import pandas as pd
 from tqdm import tqdm
 import re, sys
@@ -11,6 +10,7 @@ env = os.path.dirname(env)  # Go back one directory
 sys.path.insert(0, env)
 from src.DB_processing.tools import append_audit
 from src.data_ingest.classification import determine_final_interpretation, audit_interpretations
+from src.data_ingest.clean_surgery import add_surgery_records, add_prior_interventions
 
 def extract_cancer_type(text):
     if pd.isna(text):
@@ -577,148 +577,6 @@ def audit_pathology_dates(df):
     append_audit("query_clean.pathology_date_from_biopsy", days_differences)
     append_audit("query_clean.exam_date_from_biospy", exam_to_biopsy_differences)
     
-def add_surgery_records(final_df, surgery_df):
-    """
-    Append surgery records to the combined dataset as separate rows (same
-    pattern as pathology rows): PATIENT_ID and DATE reuse the existing
-    columns (DATE = SURGCASE_SURGICAL_OPERATION_END_DTM), plus the surgical
-    case ID and procedure description as new columns.
-    """
-    if surgery_df is None or surgery_df.empty:
-        print("No surgery data to add")
-        return final_df
-
-    surgery_records = surgery_df[[
-        'PAT_PATIENT_CLINIC_NUMBER',
-        'SURGCASE_SURGICAL_OPERATION_END_DTM',
-        'SURGPROC_SURGICAL_CASE_ID',
-        'SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION',
-        'SURGPROC_SURGICAL_PROCEDURE_BILATERAL_CODE',
-    ]].copy()
-
-    surgery_records = surgery_records.rename(columns={
-        'PAT_PATIENT_CLINIC_NUMBER': 'PATIENT_ID',
-        'SURGPROC_SURGICAL_PROCEDURE_DESCRIPTION': 'procedure_description',
-        'SURGPROC_SURGICAL_PROCEDURE_BILATERAL_CODE': 'procedure_laterality',
-    })
-    surgery_records['PATIENT_ID'] = surgery_records['PATIENT_ID'].astype(str)
-    surgery_records['DATE'] = pd.to_datetime(
-        surgery_records['SURGCASE_SURGICAL_OPERATION_END_DTM'], errors='coerce'
-    )
-    surgery_records.drop(columns=['SURGCASE_SURGICAL_OPERATION_END_DTM'], inplace=True)
-    surgery_records = surgery_records.drop_duplicates()
-
-    combined = pd.concat([final_df, surgery_records], ignore_index=True)
-    print(f"Added {len(surgery_records)} surgery rows to the combined dataset")
-    append_audit("query_clean.surgery_rows_added", len(surgery_records))
-
-    return combined
-
-
-def add_prior_interventions(debug_df):
-    """
-    Add a 'prior_intervention' column to the combined dataset (after surgery
-    rows have been appended). For each row, the column holds a JSON string
-    listing every surgical procedure performed on the same breast BEFORE that
-    row's DATE, e.g.:
-
-        [{"type": "LUMPECTOMY BREAST", "age": "128 days"},
-         {"type": "LUMPECTOMY BREAST", "age": "512 days"}]
-
-    Laterality matching (row side vs procedure_laterality):
-    - Bilateral surgeries match any row laterality
-    - Left/Right surgeries match rows with the same side, or BILATERAL rows
-    - Surgeries with unknown codes (e.g. 'Anterior', blank) are skipped since
-      they can't be attributed to a breast
-
-    The row's laterality comes from Study_Laterality, falling back to
-    Pathology_Laterality, then to the surgery bilateral code for surgery rows.
-    Rows with no laterality or no prior matching surgeries are left empty.
-    """
-    if 'procedure_description' not in debug_df.columns:
-        print("No surgery columns present -- skipping prior interventions")
-        debug_df['prior_intervention'] = None
-        return debug_df
-
-    print("\nProcessing prior interventions...")
-
-    debug_df['DATE'] = pd.to_datetime(debug_df['DATE'], errors='coerce')
-    debug_df['prior_intervention'] = None
-
-    surgery_mask = (
-        pd.notna(debug_df['procedure_description']) &
-        pd.notna(debug_df['DATE'])
-    )
-    if not surgery_mask.any():
-        print("No surgery rows found -- skipping prior interventions")
-        return debug_df
-
-    surgeries = debug_df.loc[surgery_mask, [
-        'PATIENT_ID', 'DATE',
-        'procedure_description',
-        'procedure_laterality',
-    ]].sort_values('DATE')
-
-    surgeries_by_patient = {pid: group for pid, group in surgeries.groupby('PATIENT_ID')}
-
-    def get_row_laterality(row):
-        for col in ('Study_Laterality', 'Pathology_Laterality',
-                    'procedure_laterality'):
-            val = row.get(col)
-            if pd.notna(val) and str(val).strip():
-                return str(val).upper().strip()
-        return None
-
-    # Only rows dated after a surgery for the same patient can have priors
-    candidate_mask = (
-        pd.notna(debug_df['DATE']) &
-        debug_df['PATIENT_ID'].isin(surgeries_by_patient.keys())
-    )
-
-    rows_with_priors = 0
-    for idx, row in tqdm(debug_df[candidate_mask].iterrows(),
-                         total=int(candidate_mask.sum()),
-                         desc="Prior interventions"):
-        row_lat = get_row_laterality(row)
-        if row_lat not in ('LEFT', 'RIGHT', 'BILATERAL'):
-            continue
-
-        patient_surgeries = surgeries_by_patient[row['PATIENT_ID']]
-        prior = patient_surgeries[patient_surgeries['DATE'] < row['DATE']]
-        if prior.empty:
-            continue
-
-        entries = []
-        for _, surg in prior.iterrows():
-            code = surg['procedure_laterality']
-            code = str(code).upper().strip() if pd.notna(code) else ''
-
-            side_match = (
-                code == 'BILATERAL' or
-                code == row_lat or
-                (row_lat == 'BILATERAL' and code in ('LEFT', 'RIGHT'))
-            )
-            if not side_match:
-                continue
-
-            age_days = (row['DATE'] - surg['DATE']).days
-            entries.append({
-                'type': surg['procedure_description'],
-                'age': f"{age_days} days",
-            })
-
-        if entries:
-            # Most recent procedure first
-            entries.sort(key=lambda e: int(e['age'].split()[0]))
-            debug_df.at[idx, 'prior_intervention'] = json.dumps(entries)
-            rows_with_priors += 1
-
-    print(f"Rows with prior interventions: {rows_with_priors}")
-    append_audit("query_clean.rows_with_prior_intervention", rows_with_priors)
-
-    return debug_df
-
-
 def create_final_dataset(rad_df, path_df, output_path, surgery_df=None):
     """Main function to create the final dataset with pathology records on separate rows."""
     print("\nLinking data:")
@@ -748,6 +606,11 @@ def create_final_dataset(rad_df, path_df, output_path, surgery_df=None):
 
     # Add prior_intervention JSON column (prior surgeries on the same breast)
     debug_df = add_prior_interventions(debug_df)
+
+    # Carry prior_intervention back onto final_df so it survives the
+    # downstream filtering into endpoint_data.csv. debug_df is final_df's
+    # rows in order, followed by the appended surgery rows.
+    final_df['prior_intervention'] = debug_df['prior_intervention'].iloc[:len(final_df)].values
 
     # Save to CSV
     debug_df.to_csv(f'{output_path}/combined_dataset_debug.csv', index=False)

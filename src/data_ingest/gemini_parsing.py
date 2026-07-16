@@ -14,9 +14,14 @@ parent_dir = os.path.dirname(parent_dir)
 sys.path.append(parent_dir)
 
 from config import CONFIG
-from labeling.findings_prepare import anonymize_dates_times_and_names
+from labeling.labelbox_api.findings_prepare import anonymize_dates_times_and_names
 
 # Initialize Vertex AI client
+# NOTE: Gemini 3.x models are only served from the global endpoint (regional
+# batch returns 404 MODEL_NOT_SUPPORTED_FOR_BATCH), but this project's
+# gcp.resourceLocations org policy blocks the global endpoint entirely
+# (400 FAILED_PRECONDITION). Until batch support lands in-region, only
+# 2.5-series models work here.
 os.environ['GOOGLE_CLOUD_PROJECT'] = CONFIG['env']['project_id']
 os.environ['GOOGLE_CLOUD_LOCATION'] = CONFIG['env']['region']
 os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = 'True'
@@ -327,7 +332,7 @@ def create_batch_jsonl(
     csv_path: str, 
     output_jsonl: str, 
     text_column: str = "ultrasound_findings",
-    model: str = "gemini-2.5-flash-lite"
+    model: str = "gemini-2.5-flash"
 ):
     print(f"Loading data from: {csv_path}")
     df = pd.read_csv(csv_path)
@@ -701,7 +706,7 @@ if __name__ == "__main__":
         csv_path='/data/endpoint_data.csv',
         gcs_bucket=CONFIG['BUCKET'],
         text_column='ultrasound_findings',
-        model='gemini-3.1-flash-lite',
+        model='gemini-2.5-flash',
         output_dir='batch_results_gemini',
         gcs_input_prefix='cadbusi/batch_input',
         gcs_output_prefix='cadbusi/batch_output',

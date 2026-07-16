@@ -107,7 +107,7 @@ def main():
             csv_path=input_csv,
             gcs_bucket=CONFIG['BUCKET'],
             text_column='ultrasound_findings',
-            model='gemini-3.1-flash-lite',
+            model='gemini-2.5-flash',
             output_dir='batch_results_gemini',
             gcs_input_prefix='cadbusi/batch_input',
             gcs_output_prefix='cadbusi/batch_output',
