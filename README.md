@@ -10,7 +10,26 @@ SQLite database manager that is designed to process breast ultrasound data from 
 - Install requirements: `pip install -r requirements.txt`
 - Create/Configure: `./config.py`
 - Obtain certificate `./src/dicom_downloader/CertEmulationCA.crt`
+- Obtain Hugging Face credentials `./hf-credentials.env` (see below)
 - Obtain user privileges: `gcloud auth application-default login --no-launch-browser`
+
+## Hugging Face credentials
+
+Model weights live in a private Hugging Face repo (`poofy38/CADBUSI`) and are
+downloaded on first use into `src/ML_processing/models/`. The read token comes
+from a gitignored `KEY=value` file at the repo root:
+
+```bash
+gsutil cp gs://shared-aif-bucket-87d1/Keys/hf-credentials.env .
+```
+
+`HF_TOKEN` set in the environment works too and always wins over the file.
+Don't quote the value. Without it, the first weight download fails with an
+explicit message rather than a bare HTTP error.
+
+[src/credentials.py](src/credentials.py) is shared verbatim with
+CADBUSI-Production — stdlib only, no local imports. Keep the copies identical
+rather than editing one in place.
 
 ## Configuration
 All user parameters will be controlled from a `./config.py` file, you will need to configure the following parameters:

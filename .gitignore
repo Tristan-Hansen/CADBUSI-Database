@@ -425,3 +425,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Hugging Face credentials (fetched from gs://shared-aif-bucket-87d1/Keys/).
+# Never checked in — the GCS copy is the only source of truth.
+hf-credentials.env

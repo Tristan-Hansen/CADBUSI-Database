@@ -4,6 +4,39 @@ from pathlib import Path
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Read token for the private Hugging Face repo holding our weights. Sourced
+# from `hf-credentials.env` (fetched from
+# gs://shared-aif-bucket-87d1/Keys/hf-credentials.env) or straight from the
+# environment, whichever is present — an already-set variable always wins.
+# `src/credentials.py` is shared verbatim with CADBUSI-Production; keep the two
+# copies identical rather than editing one of them in place.
+_HF_TOKEN_ENV = "HF_TOKEN"
+
+
+def _hf_headers() -> dict:
+    try:
+        from src.credentials import load_credentials
+    except ImportError:
+        # Tolerate being run with this repo's root off sys.path.
+        try:
+            import importlib.util
+            _spec = importlib.util.spec_from_file_location(
+                "_cadbusi_credentials",
+                Path(current_dir).parent / "credentials.py",
+            )
+            _mod = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            load_credentials = _mod.load_credentials
+        except Exception:
+            load_credentials = None
+    if load_credentials is not None:
+        try:
+            load_credentials()
+        except Exception:
+            pass  # never let credential discovery break a download path
+    token = (os.environ.get(_HF_TOKEN_ENV) or "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
 def download_models():
     """
     Download all required models from Hugging Face.
@@ -65,7 +98,21 @@ def download_models():
         print(f"\nDownloading {model_info['filename']} from Hugging Face...")
         
         try:
-            response = requests.get(model_info["url"], stream=True, verify=False)
+            response = requests.get(
+                model_info["url"], stream=True, verify=False,
+                headers=_hf_headers(),
+            )
+            # A private repo answers an unauthenticated request with 401, and a
+            # token lacking access with 403. Both otherwise surface as a bare
+            # HTTPError that reads like a network fault — say what it is.
+            if response.status_code in (401, 403):
+                have = "set" if os.environ.get(_HF_TOKEN_ENV) else "NOT set"
+                raise RuntimeError(
+                    f"Hugging Face refused the download of "
+                    f"{model_info['filename']} (HTTP {response.status_code}). "
+                    f"{_HF_TOKEN_ENV} is {have}. The weights repo is private — "
+                    f"see hf-credentials.env in the README."
+                )
             response.raise_for_status()
             
             # Get file size for progress
