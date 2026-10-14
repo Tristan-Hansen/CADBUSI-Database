@@ -434,3 +434,6 @@ labelbox-credentials.env
 
 # Unused downloader stub, previously caught by the old blanket config.py rule
 src/dicom_downloader/app/config.py
+
+# Per-machine Vertex spend ledger (src/cloud/ledger.py)
+cloud_runs/
