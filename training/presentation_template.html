@@ -1,0 +1,372 @@
+<title>Erasing the Sonographer's Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  /* Cool slate neutrals biased toward the blue instrument accent. Image wells
+     stay near-black in BOTH themes -- PACS viewers put pixel data on black
+     regardless of their UI chrome, and grey-level judgements need it. */
+  :root {
+    --ground:#eceff3; --surface:#f9fafc; --raise:#ffffff;
+    --ink:#0f151c; --ink-2:#3c4653; --muted:#5a6672; --faint:#8b96a3;
+    --line:#d5dbe3; --line-2:#c2cad5;
+    --accent:#1268c9; --accent-soft:#e3edfa;
+    --alert:#a32f47; --alert-soft:#f8e6ea;
+    --well:#07090c; --well-line:#1d242c;
+    --display:"Archivo",system-ui,"Segoe UI",sans-serif;
+    --body:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0c1015; --surface:#141a21; --raise:#1a222b;
+      --ink:#dce3ea; --ink-2:#b3bfcb; --muted:#8593a1; --faint:#66727e;
+      --line:#242d37; --line-2:#33404d;
+      --accent:#4a93dd; --accent-soft:#15263a;
+      --alert:#d85c6d; --alert-soft:#331a21;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0c1015; --surface:#141a21; --raise:#1a222b;
+    --ink:#dce3ea; --ink-2:#b3bfcb; --muted:#8593a1; --faint:#66727e;
+    --line:#242d37; --line-2:#33404d;
+    --accent:#4a93dd; --accent-soft:#15263a;
+    --alert:#d85c6d; --alert-soft:#331a21;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+       font:400 16.5px/1.62 var(--body);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+  .col{max-width:67ch}
+  h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+  h1{font-weight:700;font-size:clamp(30px,4.4vw,46px);line-height:1.06;
+     letter-spacing:-.022em}
+  h2{font-weight:600;font-size:23px;letter-spacing:-.012em;line-height:1.2}
+  h3{font-weight:600;font-size:15px;letter-spacing:-.005em}
+  p{margin:0 0 14px}
+  a{color:var(--accent)}
+  .lbl{font:500 10.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+       color:var(--muted)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  header{border-bottom:1px solid var(--line);padding:44px 0 30px;background:var(--surface)}
+  .eyebrow{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  header p{color:var(--ink-2);margin:16px 0 0;max-width:64ch}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:22px;
+        font:400 12px var(--mono);color:var(--faint)}
+  .meta b{color:var(--ink-2);font-weight:500}
+
+  section{padding:40px 0}
+  section + section{border-top:1px solid var(--line)}
+  .head{margin-bottom:22px}
+  .head p{color:var(--muted);font-size:15px;margin:8px 0 0;max-width:66ch}
+
+  /* Headline figures: the point of the page, so they get the one big-number
+     treatment and nothing else on the page competes. */
+  .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+        gap:1px;background:var(--line);border:1px solid var(--line);
+        border-radius:3px;overflow:hidden}
+  .fig{background:var(--surface);padding:18px 20px 16px}
+  .fig .v{font:600 31px/1.05 var(--mono);font-variant-numeric:tabular-nums;
+          letter-spacing:-.03em;margin:9px 0 5px}
+  .fig .v small{font-size:15px;font-weight:400;color:var(--muted);letter-spacing:0}
+  .fig .n{font-size:13.5px;color:var(--muted);line-height:1.45}
+  .fig.acc .v{color:var(--accent)}
+  .fig.alt .v{color:var(--alert)}
+
+  figure{margin:0}
+  figcaption{font-size:13.5px;color:var(--muted);margin-top:10px;max-width:66ch}
+  .chartbox{background:var(--surface);border:1px solid var(--line);border-radius:3px;
+            padding:20px 20px 14px}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  svg{display:block;width:100%;height:auto}
+  .gl{stroke:var(--line);stroke-width:1}
+  .ax{fill:var(--faint);font-family:var(--mono);font-size:9.5px}
+  .axl{fill:var(--muted);font-family:var(--mono);font-size:9.5px;
+       letter-spacing:.1em;text-transform:uppercase}
+  .bar{fill:var(--accent)}
+  .bar:hover{fill:var(--ink)}
+  .ref{stroke:var(--alert);stroke-width:1.5;stroke-dasharray:3 3}
+  .refl{fill:var(--alert);font-family:var(--mono);font-size:9.5px;font-weight:500}
+  .med{stroke:var(--ink);stroke-width:1.5}
+  .medl{fill:var(--ink);font-family:var(--mono);font-size:9.5px;font-weight:500}
+
+  /* One case = one triptych. Same edges, same baseline, same caption slot. */
+  .cases{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+         gap:16px}
+  .case{background:var(--surface);border:1px solid var(--line);border-radius:3px;
+        overflow:hidden;display:flex;flex-direction:column}
+  .trip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+        background:var(--well-line);border-bottom:1px solid var(--line)}
+  .pane{background:var(--well);position:relative;min-width:0}
+  .pane img{width:100%;height:auto;display:block}
+  .pane span{position:absolute;left:4px;top:3px;font:500 8.5px var(--mono);
+             letter-spacing:.1em;color:#7d8894;text-transform:uppercase}
+  .cap{padding:11px 13px 12px;display:flex;flex-direction:column;gap:7px}
+  .cap .w{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--ink);
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cap .r{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;
+          font:400 12px var(--mono);color:var(--muted);
+          font-variant-numeric:tabular-nums}
+  .cap .r b{color:var(--ink-2);font-weight:500}
+  .pill{font:500 10px var(--mono);letter-spacing:.06em;padding:2px 7px;
+        border-radius:999px;text-transform:uppercase}
+  .pill.good{background:var(--accent-soft);color:var(--accent)}
+  .pill.bad{background:var(--alert-soft);color:var(--alert)}
+
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{text-align:right;padding:8px 12px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{font:500 10.5px var(--mono);letter-spacing:.11em;text-transform:uppercase;
+     color:var(--muted);border-bottom:1px solid var(--line-2)}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+
+  .note{border-left:2px solid var(--line-2);padding:2px 0 2px 16px;
+        color:var(--ink-2);font-size:15px}
+  .note b{font-family:var(--display);font-weight:600}
+  ul{margin:0;padding-left:20px;color:var(--ink-2)}
+  li{margin-bottom:9px}
+  li b{font-family:var(--display);font-weight:600;color:var(--ink)}
+  code{font:400 13.5px var(--mono);background:var(--raise);
+       border:1px solid var(--line);border-radius:2px;padding:1px 5px}
+  footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--faint);
+         font:400 12.5px var(--mono)}
+
+  #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;
+       background:var(--raise);border:1px solid var(--line-2);border-radius:3px;
+       padding:6px 9px;font:400 11.5px var(--mono);color:var(--ink);
+       box-shadow:0 4px 14px rgba(0,0,0,.16);z-index:9}
+  @media (prefers-reduced-motion: reduce){#tip{transition:none}}
+  @media (max-width:760px){.charts{grid-template-columns:1fr}}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow"><span class="dot"></span><span class="lbl">CADBUSI · N2N text inpainting · held-out results</span></div>
+    <h1>Erasing the sonographer's notes</h1>
+    <p>A Noise2Noise U-Net trained to remove burned-in annotation — <span class="num">NIPPLE</span>, <span class="num">CLIP</span>, <span class="num">SCAR</span>, clock positions — from inside the ultrasound region, while leaving the scanner's own chrome untouched. Every figure below comes from 227 frames the model never trained on, carrying real annotation rather than the pasted stamps it learned from.</p>
+    <div class="meta">
+      <span><b>model</b> N2N_text_1.pth</span>
+      <span><b>trained</b> 40 epochs · 139 min · RTX 4080</span>
+      <span><b>stamps</b> 1,001 harvested glyphs</span>
+      <span><b>pool</b> 13,506 verified text-free frames</span>
+    </div>
+  </div>
+</header>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>How much of the word survives</h2>
+    <p>Contrast is the word's box mean minus the mean of the ring around it, in grey levels on the 0–255 scale the frames are stored in. A word that started 28 levels above its surroundings and ends 9 above it has lost roughly two thirds of what made it legible.</p>
+  </div>
+  <div class="figs" id="figs"></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>The distribution, not the average</h2>
+    <p>Remaining contrast is <span class="num">|after| ÷ |before|</span>. Zero means the word is gone; one means the model left it alone. The mass sits low, but the tail at one is real and is what the worst cases below show.</p>
+  </div>
+  <div class="charts">
+    <figure class="chartbox">
+      <svg id="hist" viewBox="0 0 460 250" role="img" aria-label="Histogram of remaining contrast across 172 removal targets"></svg>
+      <figcaption>172 removal targets. The bar at <span class="num">1.0</span> is words the model did not touch at all.</figcaption>
+    </figure>
+    <figure class="chartbox">
+      <svg id="curve" viewBox="0 0 460 250" role="img" aria-label="Validation error against the clean frame, by epoch, log scale"></svg>
+      <figcaption>Error against the untouched frame, log scale. This is the metric checkpoints were selected on — the clean frame is real ground truth here, since it was clean before a stamp was pasted on it.</figcaption>
+    </figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>Best cases</h2>
+    <p>The six removal targets with the least contrast left. Each strip is the same crop three times: as the scanner burned it in, after the model, and the difference amplified eight times so a faint residue is visible.</p>
+  </div>
+  <div class="cases" id="best"></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>Typical cases</h2>
+    <p>The six sitting closest to the median. This is what the model does most of the time: the word drops to a smudge that still shows in the difference map but no longer reads as letters.</p>
+  </div>
+  <div class="cases" id="typical"></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>Worst cases</h2>
+    <p>The six with the most contrast left — the honest failure end.</p>
+  </div>
+  <div class="cases" id="worst"></div>
+  <p class="note col" style="margin-top:20px"><b>Two different failures are mixed here.</b> Some are words the model simply did not touch, and the difference panel is black. Others started with almost no contrast against their background — a word <span class="num">4</span> grey levels off its surroundings — where the ratio is unstable and a small absolute change reads as a large one. The absolute before-and-after figures under each strip separate the two.</p>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col">
+    <h2>What it leaves alone</h2>
+    <p>21% of the clinical boxes on these frames sit outside the ultrasound region, in the strip beneath the image where the database pipeline reads laterality, clock position and distance. Those must survive. They do, bit for bit — the difference panel is pure black.</p>
+  </div>
+  <div class="cases" id="preserved"></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col"><h2>By phrase</h2>
+    <p>Median remaining contrast, for phrases with at least five removal targets. <span class="num">CLIP</span> is the one the leakage audit singled out, and it is the one the model clears best.</p></div>
+  <div class="scroll col"><table id="phr">
+    <thead><tr><th>Phrase</th><th>Targets</th><th>Median remaining</th></tr></thead>
+    <tbody></tbody></table></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col"><h2>How it was trained</h2></div>
+  <div class="col">
+    <p>Text has no twin frames the way calipers do — there is no clean re-acquisition of the same view with the word missing. Noise2Noise sidesteps that. Take a frame verified free of annotation, paste a random set of harvested glyph stamps to make the input, paste a <em>different</em> independently drawn set to make the target, and train with L1. At a pixel the input stamp covers, the target is bare tissue most of the time, so the optimal output is the tissue underneath.</p>
+    <p>Anything identical on both sides is preserved, because the loss punishes changing it. That is the whole reason the scanner sidebar survives: stamps land only inside the ultrasound rectangle, and crops are taken from the whole frame, so the network sees chrome-with-no-edit and tissue-with-edit side by side.</p>
+    <p>The stamps carry an alpha channel built from a morphological top-hat, so a paste composites the glyph and not a rectangle of donor tissue. Roughly <span class="num">60%</span> of each stamp's bounding box is fully transparent.</p>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="head col"><h2>What this does not tell you</h2></div>
+  <ul class="col">
+    <li><b>Nothing here was measured against the classifier.</b> Contrast is measured on the full-resolution frame. Whether the residue is still legible to the model at 256 px is a separate question, and answering it means re-running the occlusion test on detexted crops.</li>
+    <li><b>Seven percent of removal targets are untouched.</b> Not faint — unchanged. On a corpus rebuild those frames would carry their annotation through.</li>
+    <li><b>RIB and IMPLANT are thin.</b> Eleven and eight stamps against NIPPLE's 328, because OCR found so few. They are represented, not learned.</li>
+    <li><b>The training pool is the OCR'd sample</b>, 13,506 of roughly 558,000 v7 frames, because those are the only frames with a verdict on whether they were already clean.</li>
+  </ul>
+</div></section>
+
+<footer><div class="wrap">CADBUSI-Database · data/text_inpaint · standalone, not wired into the database build</div></footer>
+<div id="tip"></div>
+
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("payload").textContent);
+  const $ = (s) => document.querySelector(s);
+  const pct = (x) => (x * 100).toFixed(0) + "%";
+  const tip = $("#tip");
+
+  function hover(el, html) {
+    el.addEventListener("mousemove", (e) => {
+      tip.innerHTML = html;
+      tip.style.opacity = 1;
+      const r = tip.getBoundingClientRect();
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - r.width - 8) + "px";
+      tip.style.top = Math.max(8, e.clientY - r.height - 12) + "px";
+    });
+    el.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+  }
+
+  // ---- headline figures ---------------------------------------------------
+  const A = D.abs, S = D.stats;
+  $("#figs").innerHTML = [
+    ["acc", `${A.median_before}<small> → </small>${A.median_after}`,
+     "grey levels", "Median contrast of a word before and after, out of 255"],
+    ["acc", pct(S.frac_under_half), "cut past half",
+     `${S.remove_n} removal targets lost more than half their contrast`],
+    ["acc", "0.016", "grey levels", "Change to tissue elsewhere in the ultrasound region"],
+    ["alt", pct(A.untouched), "untouched",
+     "Words the model left completely unchanged — the failure mode"],
+  ].map(([k, v, u, n]) =>
+    `<div class="fig ${k}"><div class="lbl">${u}</div>
+     <div class="v">${v}</div><div class="n">${n}</div></div>`).join("");
+
+  // ---- histogram ----------------------------------------------------------
+  (function () {
+    const h = D.hist, n = h.length, max = Math.max(...h);
+    const W = 460, H = 250, L = 38, R = 14, T = 18, B = 42;
+    const iw = W - L - R, ih = H - T - B;
+    const x = (i) => L + (i / n) * iw, bw = iw / n - 2;
+    const y = (v) => T + ih - (v / max) * ih;
+    let s = "";
+    for (let g = 0; g <= 4; g++) {
+      const v = (max / 4) * g, yy = y(v);
+      s += `<line class="gl" x1="${L}" y1="${yy}" x2="${W - R}" y2="${yy}"/>` +
+           `<text class="ax" x="${L - 6}" y="${yy + 3}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+    h.forEach((v, i) => {
+      if (!v) return;
+      const hh = Math.max(2, (v / max) * ih);
+      s += `<rect class="bar" x="${x(i) + 1}" y="${y(v)}" width="${bw}" height="${hh}" rx="2" data-i="${i}" data-v="${v}"/>`;
+    });
+    const mx = L + (S.median_remaining / 2) * iw;
+    s += `<line class="med" x1="${mx}" y1="${T - 4}" x2="${mx}" y2="${T + ih}"/>` +
+         `<text class="medl" x="${mx + 4}" y="${T + 4}">median ${S.median_remaining.toFixed(2)}</text>`;
+    const ux = L + 0.5 * iw;
+    s += `<line class="ref" x1="${ux}" y1="${T + ih * .34}" x2="${ux}" y2="${T + ih}"/>` +
+         `<text class="refl" x="${ux + 4}" y="${T + ih * .34 + 9}">untouched</text>`;
+    [0, .5, 1, 1.5, 2].forEach((t) => {
+      const xx = L + (t / 2) * iw;
+      s += `<text class="ax" x="${xx}" y="${T + ih + 15}" text-anchor="middle">${t.toFixed(1)}</text>`;
+    });
+    s += `<text class="axl" x="${L + iw / 2}" y="${H - 8}" text-anchor="middle">remaining contrast</text>`;
+    s += `<text class="axl" x="${L - 28}" y="${T + ih / 2}" text-anchor="middle" transform="rotate(-90 ${L - 28} ${T + ih / 2})">boxes</text>`;
+    const el = $("#hist");
+    el.innerHTML = s;
+    el.querySelectorAll(".bar").forEach((b) => {
+      const i = +b.dataset.i;
+      hover(b, `${(i / 10).toFixed(1)}–${((i + 1) / 10).toFixed(1)} remaining<br><b>${b.dataset.v}</b> boxes`);
+    });
+  })();
+
+  // ---- training curve -----------------------------------------------------
+  (function () {
+    const t = D.train, W = 460, H = 250, L = 46, R = 14, T = 18, B = 42;
+    const iw = W - L - R, ih = H - T - B;
+    const lo = 4e-4, hi = 1.4e-2;
+    const ly = (v) => T + ih - (Math.log(v / lo) / Math.log(hi / lo)) * ih;
+    const lx = (e) => L + ((e - 1) / 39) * iw;
+    let s = "";
+    [1e-3, 1e-2].forEach((v) => {
+      s += `<line class="gl" x1="${L}" y1="${ly(v)}" x2="${W - R}" y2="${ly(v)}"/>` +
+           `<text class="ax" x="${L - 6}" y="${ly(v) + 3}" text-anchor="end">${v}</text>`;
+    });
+    const path = (arr) => arr.map((v, i) =>
+      (i ? "L" : "M") + lx(t.epoch[i]).toFixed(1) + " " + ly(Math.max(v, lo)).toFixed(1)).join(" ");
+    s += `<path d="${path(t.train)}" fill="none" stroke="var(--line-2)" stroke-width="2"/>`;
+    s += `<path d="${path(t.val_clean)}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>`;
+    const le = t.epoch.length - 1;
+    s += `<circle cx="${lx(t.epoch[le])}" cy="${ly(t.val_clean[le])}" r="4" fill="var(--accent)"/>`;
+    s += `<text class="medl" x="${lx(t.epoch[le]) - 6}" y="${ly(t.val_clean[le]) + 16}" text-anchor="end">0.00054</text>`;
+    s += `<text class="ax" x="${lx(6)}" y="${ly(t.train[5]) - 8}" fill="var(--muted)">training</text>`;
+    s += `<text class="ax" x="${lx(14)}" y="${ly(t.val_clean[13]) + 14}" fill="var(--accent)">held out</text>`;
+    [1, 10, 20, 30, 40].forEach((e) => {
+      s += `<text class="ax" x="${lx(e)}" y="${T + ih + 15}" text-anchor="middle">${e}</text>`;
+    });
+    s += `<text class="axl" x="${L + iw / 2}" y="${H - 8}" text-anchor="middle">epoch</text>`;
+    s += `<text class="axl" x="${L - 34}" y="${T + ih / 2}" text-anchor="middle" transform="rotate(-90 ${L - 34} ${T + ih / 2})">L1 vs clean</text>`;
+    $("#curve").innerHTML = s;
+  })();
+
+  // ---- case galleries -----------------------------------------------------
+  const panes = [["a", "burned in"], ["b", "after"], ["d", "difference ×8"]];
+  function render(id, items, kind) {
+    $("#" + id).innerHTML = items.map((c) => {
+      const gone = c.remaining < 0.5;
+      const pill = kind === "preserved"
+        ? `<span class="pill good">kept</span>`
+        : `<span class="pill ${gone ? "good" : "bad"}">${gone ? "removed" : "survived"}</span>`;
+      const imgs = panes.map(([k, lab]) =>
+        `<div class="pane"><img src="data:image/jpeg;base64,${c[k]}" alt="${lab}" loading="lazy"><span>${lab}</span></div>`).join("");
+      return `<article class="case"><div class="trip">${imgs}</div>
+        <div class="cap"><div class="w">${c.text}</div>
+        <div class="r">${pill}<span><b>${c.before}</b> → <b>${c.after}</b> grey</span>
+        <span>remaining <b>${c.remaining.toFixed(2)}</b></span></div></div></article>`;
+    }).join("");
+  }
+  ["best", "typical", "worst", "preserved"].forEach((k) => render(k, D.groups[k], k));
+
+  // ---- by-phrase table ----------------------------------------------------
+  $("#phr").querySelector("tbody").innerHTML = D.by_phrase.map((r) =>
+    `<tr><td class="num">${r.phrase}</td><td class="num">${r.n}</td>
+     <td class="num">${r.median.toFixed(3)}</td></tr>`).join("");
+})();
+</script>
