@@ -44,6 +44,14 @@ CONFIG = {
         "download_path": "Downloads/2025-11-26-5",
     },
 
+    # Model weights: "source" is tried first, the other is the fallback.
+    # GCS path is inside storage.bucket_name; HF repo is private (needs hf-credentials.env).
+    "weights": {
+        "source": "gcs",
+        "gcs_prefix": "pretrained_weights/cadbusi",
+        "hf_repo": "poofy38/CADBUSI",
+    },
+
     "BUCKET": "shared-aif-bucket-87d1",
     "WINDIR": "D:/DATA/CADBUSI/",
     "DATABASE_DIR": "Databases/database_2026_1_13_main/",
@@ -55,3 +63,11 @@ CONFIG = {
     "VIDEO_SAMPLING": 0, # every nth frame, 0 turns off videos
     "DEBUG_DATA_RANGE": [0, 10000],
 }
+
+# Per-run overrides, set by the Vertex launchers in src/cloud/ so a test run writes to its own
+# folder under Databases/runs/ instead of the shared database.
+if os.environ.get("CADBUSI_DATABASE_DIR"):
+    CONFIG["DATABASE_DIR"] = os.environ["CADBUSI_DATABASE_DIR"]
+if "CADBUSI_DEBUG_DATA_RANGE" in os.environ:  # "" disables the range; "0,500" sets it
+    _r = os.environ["CADBUSI_DEBUG_DATA_RANGE"]
+    CONFIG["DEBUG_DATA_RANGE"] = [int(x) for x in _r.split(",")] if _r else None

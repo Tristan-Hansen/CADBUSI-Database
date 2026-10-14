@@ -2,6 +2,13 @@ import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
+# Vertex jobs set CADBUSI_WRITE_PREFIX so a run can only write inside its own
+# folder (src/cloud/write_guard.py). Must run before anything touches GCS.
+import os as _os
+if _os.environ.get("CADBUSI_WRITE_PREFIX"):
+    from src.cloud.write_guard import install as _install_write_guard
+    _install_write_guard()
+
 from src.encrypt_keys import encrypt_ids
 
 from tools.storage_adapter import * 
@@ -102,6 +109,8 @@ def main():
         else:
             print("Processing all rows")
 
+        run_prefix = os.environ.get("CADBUSI_WRITE_PREFIX", "")
+
         # Run batch pipeline
         result = run_batch_pipeline(
             csv_path=input_csv,
@@ -109,8 +118,9 @@ def main():
             text_column='ultrasound_findings',
             model='gemini-2.5-flash',
             output_dir='batch_results_gemini',
-            gcs_input_prefix='cadbusi/batch_input',
-            gcs_output_prefix='cadbusi/batch_output',
+            # Inside a job the write guard only allows the run folder, so the batch files go there.
+            gcs_input_prefix=f"{run_prefix}gemini/batch_input" if run_prefix else 'cadbusi/batch_input',
+            gcs_output_prefix=f"{run_prefix}gemini/batch_output" if run_prefix else 'cadbusi/batch_output',
             wait=True,
             batch_size=200000,
             limit=args.limit,

@@ -23,7 +23,9 @@ REPO = Path(__file__).resolve().parents[2]
 LEDGER = REPO / "cloud_runs" / "gcp_spend.csv"
 CAP_USD = float(os.environ.get("CADBUSI_GCP_CAP_USD", "100"))
 RATES = {"a2-highgpu-1g": (1.795, "BUS_framework PRICING.md Mayo SPOT a2-highgpu-1g (1x A100 40GB)"),
-         "n2-standard-8": (0.45, "conservative upper bound; n2-standard-8 not in PRICING.md")}
+         "n2-standard-8": (0.45, "conservative upper bound; n2-standard-8 not in PRICING.md"),
+         "n1-standard-8-t4": (0.85, "conservative upper bound (~Vertex on-demand list n1-standard-8 + 1x T4); "
+                                    "not in PRICING.md, spot is lower")}
 FIELDS = ["job_name", "job_id", "machine", "spot_rate_usd_hr", "rate_source", "timeout_h", "worst_case_usd",
           "submitted_utc", "start_utc", "end_utc", "state", "hours", "cost_usd", "note"]
 FINAL = {"JOB_STATE_SUCCEEDED", "JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"}

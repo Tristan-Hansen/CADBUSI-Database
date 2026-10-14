@@ -103,6 +103,7 @@ def job_logs(job_id: str, since_minutes: int = 10, limit: int = 300) -> list[str
 
 if __name__ == "__main__":
     import sys
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # job logs contain box-drawing chars
     if sys.argv[1] == "list":
         for d in list_jobs():
             print(d["name"].rsplit("/", 1)[1], d.get("state"), d.get("displayName"), d.get("createTime"))

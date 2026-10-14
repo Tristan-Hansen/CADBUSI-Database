@@ -1067,8 +1067,15 @@ def Parse_Dicom_Files(CONFIG, anon_location, lesion_anon_file, birads_anon_file,
     make_dirs(f'{database_path}/videos/')
 
 
-    # Get every Dicom File
-    dcm_files_list = get_files_by_extension(raw_storage_database, '.dcm')
+    # Get every Dicom File. CADBUSI_DICOM_LIST (a local text file, one bucket path per line) replaces
+    # the listing, so a test run can target a few exams without walking the whole download folder.
+    dicom_list = os.environ.get("CADBUSI_DICOM_LIST")
+    if dicom_list:
+        with open(dicom_list) as f:
+            dcm_files_list = [line.strip() for line in f if line.strip().endswith('.dcm')]
+        print(f'Using explicit DICOM list {dicom_list}')
+    else:
+        dcm_files_list = get_files_by_extension(raw_storage_database, '.dcm')
     append_audit("dicom_parsing.input_dicoms", len(dcm_files_list))
     print(f'Total Dicoms in Input: {len(dcm_files_list)}')
 

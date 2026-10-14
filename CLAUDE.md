@@ -31,5 +31,7 @@ Rules:
 - Never submit a real job without the user's explicit OK for that job. Show the dry run first,
   including the worst-case cost.
 - Spot only, always with a timeout. Run a canary (small slice) before any full run.
+- GPU stages (`--database`) run on a T4 (`n1-standard-8-t4` in `src/cloud/jobs.py`), never an A100;
+  the models were built for a T4. CPU-only stages (query, BI-RADS) use `n2-standard-8`.
 - Jobs write only under their own GCS prefix and must respect the IRB window (`src/irb.py`).
 - Monitor with `vertex_api get/logs` and `python -m src.cloud.ledger`. Report failures with log excerpts.
