@@ -2,6 +2,20 @@
 
 SQLite database manager that is designed to process breast ultrasound data from Mayo Clinic and store it in a structured format, making it easy to anonymize, manipulate, label, analyze, and prepare for ML research.
 
+## IRB scope (read before pulling any data)
+
+All data in this repo falls under IRB protocol **#21-003545**, which approves records dated
+**2018-01-01 through 2024-12-31** (inclusive). An earlier build pulled exams dated 2025 and later,
+which led to a reportable deviation. An amendment to widen the window has been filed but is **not
+approved**.
+
+- The window is defined in one place, `src/irb.py`. The `--query` BigQuery pulls (radiology,
+  pathology, surgery) filter on it, and the run hard-fails if any radiology exam falls outside it.
+- Do not pull new data scope (wider dates, new cohorts, new data elements) without PI approval
+  via the amendment.
+- Older databases (e.g. `cadbusi_2026_7_16.db`) may still contain out-of-window exams. Filter them
+  before using them for anything new.
+
 ## Setup
 
 - Create a GCP AI Factory instance with a T4 GPU

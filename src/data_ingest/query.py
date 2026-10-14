@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from src.DB_processing.tools import append_audit
+from src.irb import bq_date_filter, assert_in_irb_window, IRB_START_DATE, IRB_END_DATE
 # Get the current script directory and go back one directory
 env = os.path.dirname(os.path.abspath(__file__))
 env = os.path.dirname(env)  # Go back one directory
@@ -132,6 +133,8 @@ def get_radiology_data(limit=None):
     WHERE RADTEST_DIM_RADIOLOGY_TEST_NAME.RADIOLOGY_TEST_DESCRIPTION LIKE '%BREAST%'
       AND imaging_studies.DESCRIPTION LIKE '%BREAST%'
       AND (IMAGINGSTUDYSERIES.SERIES_MODALITY_CODE IS NULL OR IMAGINGSTUDYSERIES.SERIES_MODALITY_CODE NOT IN ('SR', 'PR', 'KO'))
+      -- IRB window (src/irb.py)
+      AND {bq_date_filter('RAD_FACT_RADIOLOGY.RADIOLOGY_DTM')}
     """
 
     query_start_time = time.time()
@@ -208,6 +211,8 @@ def get_pathology_data(patient_ids, batch_size=1000):
           ON (SPECDET.SPECIMEN_PART_TYPE_DK = SPECPARTYP.SPECIMEN_PART_TYPE_DK)
         WHERE PAT_DIM_PATIENT.PATIENT_CLINIC_NUMBER IN ({ids_str})
         AND LOWER(SPECPARTYP.SPECIMEN_PART_TYPE_NAME) LIKE '%breast%'
+        -- IRB window (src/irb.py)
+        AND {bq_date_filter('COALESCE(PATH_FACT_PATHOLOGY.SPECIMEN_RECEIVED_DTM, PATH_FACT_PATHOLOGY.SPECIMEN_RESULT_DTM)')}
         """
         
         batch_df = client.query(query).to_dataframe()
@@ -342,6 +347,8 @@ def get_surgery_data(patient_ids, batch_size=1000):
         WHERE
           PAT_DIM_PATIENT.PATIENT_CLINIC_NUMBER IN ({ids_str})
           AND SURGPROC_DIM_SURGICAL_PROCEDURE.SURGICAL_PROCEDURE_DESCRIPTION LIKE '%BREAST%'
+          -- IRB window (src/irb.py)
+          AND {bq_date_filter('SURGCASE_FACT_SURGICAL_CASE.SURGICAL_CASE_DTM')}
         """
 
         batch_df = client.query(query).to_dataframe()
@@ -386,6 +393,7 @@ def run_breast_imaging_query(limit=None):
         limit (int, optional): Limit the number of patients to process
     """
     print(f"Setting query limit to {limit}")
+    print(f"IRB window: {IRB_START_DATE} to {IRB_END_DATE}")
     
     # Create data directory if it doesn't exist
     data_dir = os.path.join(env, "data")
@@ -402,6 +410,7 @@ def run_breast_imaging_query(limit=None):
     # Step 1: Get all radiology data for breast imaging
     print("\n=== RADIOLOGY DATA QUERY ===")
     rad_df = get_radiology_data(limit=limit)
+    assert_in_irb_window(rad_df['RADIOLOGY_DTM'], "radiology exams")
 
     # Audit radiology results
     rad_path = os.path.join(env, "data", "raw_radiology.csv")
