@@ -24,7 +24,6 @@
 *.log
 *.yaml
 
-config.py
 src/ML_processing/models/*
 training/model/*
 
@@ -429,3 +428,9 @@ FodyWeavers.xsd
 # Hugging Face credentials (fetched from gs://shared-aif-bucket-87d1/Keys/).
 # Never checked in — the GCS copy is the only source of truth.
 hf-credentials.env
+
+# Labelbox API key (fetched from gs://shared-aif-bucket-87d1/Keys/). Never checked in.
+labelbox-credentials.env
+
+# Unused downloader stub, previously caught by the old blanket config.py rule
+src/dicom_downloader/app/config.py

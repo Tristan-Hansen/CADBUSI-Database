@@ -22,7 +22,7 @@ approved**.
 - Clone repository: `git clone https://github.com/Poofy1/CADBUSI-Database.git`
 - Go into dir: `cd CADBUSI-Database`
 - Install requirements: `pip install -r requirements.txt`
-- Create/Configure: `./config.py`
+- Review `./config.py` (committed, shared) and add `./labelbox-credentials.env` if you use the Labelbox scripts (see Configuration)
 - Obtain certificate `./src/dicom_downloader/CertEmulationCA.crt`
 - Obtain Hugging Face credentials `./hf-credentials.env` (see below)
 - Obtain user privileges: `gcloud auth application-default login --no-launch-browser`
@@ -46,50 +46,21 @@ CADBUSI-Production — stdlib only, no local imports. Keep the copies identical
 rather than editing one in place.
 
 ## Configuration
-All user parameters will be controlled from a `./config.py` file, you will need to configure the following parameters:
-```
-CONFIG = {
-    # Environment configuration
-    "env": {
-        "project_id": "your-project-id",
-        "region": "us-central1",
-        "topic_name": "dicom-processing-topic",
-        "subscription_name": "dicom-processing-subscription",
-        "my_service_account": "your-service-id",
-        "service_account_identity": "your-service-account@your-project-id.iam.gserviceaccount.com"
-    },
-    
-    # Cloud Run configuration
-    "cloud_run": {
-        "service": "pubsub-push-cloudrun",
-        "version": "1.0",
-        "ar": "your-artifact-registry",
-        "ar_name": "pubsub-push-cloudrun",
-        "target_tag": "us-central1-docker.pkg.dev/your-project-id/your-artifact-registry/pubsub-push-cloudrun:1.0",
-        "vpc_shared": "your-shared-vpc-id",
-        "vpc_name": "your-vpc-name"
-    },
-    
-    # Storage configuration
-    "storage": {
-        "gcs_log": "gs://your-bucket-name/cloudbuild_log",
-        "gcs_stage": "gs://your-bucket-name/cloudbuild_stage",
-        "bucket_name": "your-bucket-name",
-        "download_path": "Downloads",
-    },
-    
-    "BUCKET": "your-bucket-name",
-    "WINDIR": "D:/DATA/YOUR_PROJECT/",
-    "DATABASE_DIR": "Databases/database_YYYY_MM_DD/", # Final location of the database.
 
-    "LABELBOX_API_KEY": "your-labelbox-api-key",
-    "PROJECT_ID": "your-labelbox-project-id",
-    "LABELBOX_LABELS": "labelbox_data/",
-    "TARGET_CASES": "/failed_cases.csv", # Directory of worst performing cases from training. Prepares these cases for instance labeling on Label Box.
-    "VIDEO_SAMPLING": 0, # every nth frame, 0 turns off videos
-    "DEBUG_DATA_RANGE": [], # Process a reduced set of dicom files (Ex: [0, 1000]).
-}
+`./config.py` is committed and is the single shared configuration (project, Cloud Run, bucket,
+`DATABASE_DIR`, etc.). Keep it identical on every machine: change it in git, not by hand on one box.
+
+It holds no secrets. The Labelbox API key lives in a gitignored `labelbox-credentials.env` at the
+repo root (same `KEY=value` format as `hf-credentials.env`, no quotes). The GCS copy is the
+source of truth:
+
+```bash
+gsutil cp gs://shared-aif-bucket-87d1/Keys/labelbox-credentials.env .
 ```
+
+A `LABELBOX_API_KEY` environment variable overrides the file. Only the `labeling/labelbox_api/`
+scripts need it; the main pipeline runs without it.
+
 ## Usage
 The pipeline is operated through a single command-line interface in main.py, which provides several functions. For general purpose, you should perform these commands in this order: 
 
