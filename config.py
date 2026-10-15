@@ -38,8 +38,8 @@ CONFIG = {
 
     # Storage configuration
     "storage": {
-        "gcs_log": "gs://shared-aif-bucket-87d1/cloudbuild_log",
-        "gcs_stage": "gs://shared-aif-bucket-87d1/cloudbuild_stage",
+        "gcs_log": "gs://shared-aif-bucket-87d1/_infra/cloudbuild_log",
+        "gcs_stage": "gs://shared-aif-bucket-87d1/_infra/cloudbuild_stage",
         "bucket_name": "shared-aif-bucket-87d1",
         "download_path": "Downloads/2025-11-26-5",
     },

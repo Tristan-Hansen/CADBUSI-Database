@@ -119,8 +119,8 @@ def main():
             model='gemini-2.5-flash',
             output_dir='batch_results_gemini',
             # Inside a job the write guard only allows the run folder, so the batch files go there.
-            gcs_input_prefix=f"{run_prefix}gemini/batch_input" if run_prefix else 'cadbusi/batch_input',
-            gcs_output_prefix=f"{run_prefix}gemini/batch_output" if run_prefix else 'cadbusi/batch_output',
+            gcs_input_prefix=f"{run_prefix}gemini/batch_input" if run_prefix else '_infra/gemini_batch/batch_input',
+            gcs_output_prefix=f"{run_prefix}gemini/batch_output" if run_prefix else '_infra/gemini_batch/batch_output',
             wait=True,
             batch_size=200000,
             limit=args.limit,

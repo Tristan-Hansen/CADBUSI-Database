@@ -708,8 +708,8 @@ if __name__ == "__main__":
         text_column='ultrasound_findings',
         model='gemini-2.5-flash',
         output_dir='batch_results_gemini',
-        gcs_input_prefix='cadbusi/batch_input',
-        gcs_output_prefix='cadbusi/batch_output',
+        gcs_input_prefix='_infra/gemini_batch/batch_input',
+        gcs_output_prefix='_infra/gemini_batch/batch_output',
         wait=True,
         batch_size=200000,
         limit=None,  # Set to a number like 1000 to process only first N rows
